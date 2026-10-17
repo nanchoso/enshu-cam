@@ -47,6 +47,12 @@ button, select, input, textarea {
 button { cursor: pointer; }
 button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
 .primary { background: var(--sea); color: #06232a; border-color: var(--sea); font-weight: 700; }
+.rules { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.rules summary { font-weight: 700; cursor: pointer; }
+.rules dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 10px 0 0; }
+.rules dt { color: var(--muted); font-size: 13px; }
+.rules dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) { .rules dl { grid-template-columns: 1fr; } .rules dd { margin-bottom: 6px; } }
 #map { height: 52vh; min-height: 300px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
 .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); }
@@ -106,6 +112,11 @@ label > * { color: var(--fg); }
   </section>
 
   <main id="app" class="wrap" hidden>
+    <details class="rules" id="rules-box">
+      <summary>家族のルール（集合場所・連絡）</summary>
+      <dl id="rules"></dl>
+      <p class="hint" id="rules-status"></p>
+    </details>
     <div id="map" role="region" aria-label="投稿の地図"></div>
     <div class="bar">
       <button class="primary" id="open-form" type="button">＋ 現場の情報を投稿</button>
@@ -195,6 +206,7 @@ function errorText(e) {
   if (m === "bad_key") return "合言葉が違います。";
   if (m === "bad_photo") return "写真を小さくできませんでした。別の写真を選んでください。";
   if (m === "bad_location") return "場所が選ばれていません。";
+  if (m === "unknown_action") return "保存先のスクリプトが古いままです。Apps Script で新しいバージョンをデプロイしてください。";
   return "通信できませんでした。電波のよい場所で、もう一度試してください。";
 }
 
@@ -389,6 +401,36 @@ function showApp() {
   $("app").hidden = false;
   if (!map) initMap(); else map.invalidateSize();
   load();
+  loadRules();
+}
+
+// 家族のルールは、電波がないときも見られるように端末に控えておく
+const RULES_STORE = "family-report-rules";
+
+function renderRules(rows) {
+  const dl = $("rules");
+  dl.replaceChildren();
+  rows.forEach(({ item, value }) => { dl.append(el("dt", "", item), el("dd", "", value)); });
+}
+
+async function loadRules() {
+  let cached = null;
+  try { cached = JSON.parse(store.get(RULES_STORE) || "null"); } catch (e) { cached = null; }
+  if (cached) {
+    renderRules(cached.rows);
+  } else {
+    $("rules-box").open = true;
+  }
+  try {
+    const { rules } = await api("rules");
+    renderRules(rules);
+    store.set(RULES_STORE, JSON.stringify({ at: new Date().toISOString(), rows: rules }));
+    $("rules-status").textContent = "書き換えは Google スプレッドシートの rules シートで。";
+  } catch (e) {
+    $("rules-status").textContent = cached
+      ? `通信できないので、${fmtTime(cached.at)} に保存した内容を表示しています。`
+      : errorText(e);
+  }
 }
 
 function openSheet() {
@@ -427,7 +469,7 @@ $("gate-form").addEventListener("submit", async (ev) => {
 
 $("change-key").addEventListener("click", (ev) => {
   ev.preventDefault();
-  store.del(KEY_STORE); familyKey = "";
+  store.del(KEY_STORE); store.del(RULES_STORE); familyKey = "";
   showGate();
 });
 
