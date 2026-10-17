@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="今やること">
 <meta name="theme-color" content="#0d1418">
 <meta name="robots" content="noindex, nofollow">
-<title>地震のとき今やること</title>
+<title>災害のとき今やること</title>
 <style>
 /* Layout: 場所の切り替え → 時間順の段（揺れている間 → 5分 → 1時間 → 3日）→ 臨時情報 → 事前の準備。電波なしで開ける */
 :root {
@@ -41,6 +41,12 @@ a { color: var(--sea); }
 .alert { background: var(--alert-bg); border: 1px solid var(--alert); border-radius: 10px; padding: 12px 14px; }
 .alert strong { color: var(--alert); display: block; font-size: 1.05rem; }
 .alert p { margin: 4px 0 0; }
+.kind { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.kind button {
+  font: inherit; font-size: 16px; font-weight: 700; color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 4px; cursor: pointer;
+}
+.kind button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 .where { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); padding-block: 8px; z-index: 2; }
 .where button {
   font: inherit; font-size: 15px; color: var(--fg); background: var(--panel); border: 1px solid var(--line);
@@ -70,13 +76,18 @@ h2 small { font: 12px/1.4 var(--font-data); color: var(--muted); font-weight: 40
 <body>
 <div class="wrap">
   <header>
-    <h1>地震のとき今やること</h1>
+    <h1>今やること</h1>
     <nav><a href="./">遠州灘カメラ</a><a href="report.html">現場メモ</a></nav>
   </header>
 
+  <div class="kind" role="group" aria-label="災害の種類">
+    <button type="button" data-kind="quake" aria-pressed="true">地震・津波</button>
+    <button type="button" data-kind="flood" aria-pressed="false">大雨・台風</button>
+  </div>
+
   <div class="alert" role="note">
-    <strong>強い揺れ・長い揺れを感じたら、津波警報を待たずに逃げる</strong>
-    <p>海岸から離れていても、低く平らな土地では津波が来るおそれがあります。迷ったら高い所へ。</p>
+    <strong id="alert-title"></strong>
+    <p id="alert-body"></p>
   </div>
 
   <div class="where" role="group" aria-label="今いる場所">
@@ -87,7 +98,7 @@ h2 small { font: 12px/1.4 var(--font-data); color: var(--muted); font-weight: 40
 
   <div id="phases"></div>
 
-  <section>
+  <section id="rinji-sec">
     <h2>南海トラフ地震臨時情報が出たら</h2>
     <ul class="items" id="rinji"></ul>
   </section>
@@ -151,18 +162,61 @@ const RINJI = [
   { id: "r4", text: "両親と連絡の取り方を確かめ合う" },
 ];
 
+const FLOOD = [
+  { title: "台風・大雨の予報が出たら", time: "前日〜", items: [
+    { id: "f1", where: "all", text: "気象庁のキキクル（危険度分布）と浜松市の避難情報を確かめる", note: "雨や風がいちばん強くなる時間帯も確かめる" },
+    { id: "f2", where: "home", key: true, text: "実家へ移るかもしれないと両親に伝え、移る時刻の目安を決める", note: "暗くなる前、暴風になる前に動けるようにする" },
+    { id: "f3", where: "home", text: "車を高い所へ移す", note: "実家か、高台の駐車場へ" },
+    { id: "f4", where: "home", text: "電化製品・大事な物・非常持ち出し袋を高い所へ上げる", note: "玄関は地面から約1m上だが、想定最大の大雨では1〜3mの浸水" },
+    { id: "f5", where: "all", text: "スマホとモバイルバッテリーを充電する" },
+    { id: "f6", where: "work", text: "職場の周りも浸水の想定がある。出社するか、早めに帰るかを決めておく" },
+  ]},
+  { title: "高齢者等避難（警戒レベル3）", time: "早めに動く", items: [
+    { id: "g1", where: "home", key: true, text: "実家へ移る準備を終え、明るいうちに移る", note: "自宅の周りは水が1〜3日引かない想定。孤立する前に離れる" },
+    { id: "g2", where: "home", text: "低い道やアンダーパスを避け、高い所を通って移る" },
+    { id: "g3", where: "home", text: "家を離れるときは、ブレーカーを落とし、ガスの元栓を閉め、戸締まりをする" },
+    { id: "g4", where: "work", text: "帰る道が冠水する前に職場を出るか、職場の高い階にとどまるかを決める" },
+    { id: "g5", where: "car", text: "浜松市防災マップの冠水センサーと道路カメラで、通れる道を確かめてから動く" },
+  ]},
+  { title: "避難指示（警戒レベル4）", time: "必ず避難", items: [
+    { id: "h1", where: "all", key: true, text: "危険な場所にいる人は全員避難する。レベル4までに避難を終える" },
+    { id: "h2", where: "home", text: "まだ自宅にいたら、すぐ実家か近くの高台へ移る" },
+    { id: "h3", where: "work", text: "職場では、浸水しない高さの階へ移る", note: "職場の周りの想定は3〜5m。3階以上が目安" },
+  ]},
+  { title: "逃げ遅れた・浸水が始まったら", time: "緊急", items: [
+    { id: "i1", where: "all", key: true, text: "水の中を歩かない", note: "ひざより浅くても、流れがあると足を取られる" },
+    { id: "i2", where: "car", key: true, text: "冠水した道に車で入らない", note: "水深30cmほどでもエンジンが止まるおそれ。アンダーパスは特に危ない" },
+    { id: "i3", where: "home", key: true, text: "外に出られなければ、マンションの共用階段で2階以上へ上がる", note: "部屋は1階でも、建物の上の階へ逃げられる" },
+    { id: "i4", where: "all", text: "助けが必要なら119番。状況は家族の現場メモにも投稿する" },
+  ]},
+  { title: "水が引いたら", time: "その後", items: [
+    { id: "j1", where: "home", text: "片付ける前に、被害の写真を撮る", note: "罹災証明書や保険の請求に使う" },
+    { id: "j2", where: "home", text: "水につかった電化製品やコンセントは使わない", note: "乾いても漏電や発火のおそれがある" },
+    { id: "j3", where: "home", text: "手袋と長靴で片付け、手洗いと消毒をする" },
+  ]},
+];
+
 const PREP = [
-  { id: "p1", text: "自宅・職場・実家の想定浸水の深さを確かめる", note: "浜松市防災マップの津波浸水想定" },
+  { id: "p1", text: "自宅・職場・実家の想定浸水の深さを確かめる", note: "済み：自宅は津波の区域外、洪水は1〜3m" },
   { id: "p2", text: "両親との集合場所（第1・第2）と連絡の順番を決める" },
   { id: "p3", text: "水を備える：1人1日3リットルを最低3日分、できれば1週間分" },
   { id: "p4", text: "携帯トイレを1週間分（1日5回ほど）用意する" },
   { id: "p5", text: "モバイルバッテリーとラジオを用意する" },
   { id: "p6", text: "家具を固定し、寝る場所の近くに倒れる物を置かない" },
+  { id: "p8", text: "大雨のときに共用部の上の階へ避難させてもらえるか、管理会社や上の階の住人と話しておく" },
+  { id: "p9", text: "実家へ移る道を、低い道やアンダーパスを避けて決めておく" },
+  { id: "p10", text: "浜松市の避難情報が通知で届くようにする", note: "防災アプリや浜松市の防災メールなど" },
   { id: "p7", text: "このページ、遠州灘カメラ、現場メモをホーム画面に追加して、一度開いておく" },
 ];
 
+const ALERTS = {
+  quake: ["強い揺れ・長い揺れを感じたら、津波警報を待たずに逃げる", "海岸から離れていても、低く平らな土地では津波が来るおそれがあります。迷ったら高い所へ。"],
+  flood: ["警戒レベル4までに必ず避難。1階の自宅は、浸水する前に離れる", "想定最大の大雨では自宅の周りが1〜3m浸水し、水が1〜3日引きません。暗くなる前、暴風になる前に実家へ移ります。"],
+};
+
 const CHECK_STORE = "checklist-done";
 const WHERE_STORE = "checklist-where";
+const KIND_STORE = "checklist-kind";
 const store = {
   get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 記録できなくても使える */ } },
@@ -170,6 +224,7 @@ const store = {
 let done = {};
 try { done = JSON.parse(store.get(CHECK_STORE) || "{}"); } catch (e) { done = {}; }
 let where = store.get(WHERE_STORE) || "home";
+let kind = location.hash === "#flood" ? "flood" : location.hash === "#quake" ? "quake" : (store.get(KIND_STORE) || "quake");
 
 function item(it) {
   const li = document.createElement("li");
@@ -195,25 +250,37 @@ function item(it) {
 const phases = document.getElementById("phases");
 phases.style.display = "grid";
 phases.style.gap = "22px";
-for (const p of PHASES) {
-  const sec = document.createElement("section");
-  const h = document.createElement("h2");
-  h.textContent = p.title;
-  const s = document.createElement("small"); s.textContent = p.time; h.append(s);
-  const ul = document.createElement("ul"); ul.className = "items";
-  p.items.forEach((it) => ul.append(item(it)));
-  sec.append(h, ul);
-  phases.append(sec);
+for (const [k, list] of [["quake", PHASES], ["flood", FLOOD]]) {
+  for (const p of list) {
+    const sec = document.createElement("section");
+    sec.dataset.kind = k;
+    const h = document.createElement("h2");
+    h.textContent = p.title;
+    const s = document.createElement("small"); s.textContent = p.time; h.append(s);
+    const ul = document.createElement("ul"); ul.className = "items";
+    p.items.forEach((it) => ul.append(item(it)));
+    sec.append(h, ul);
+    phases.append(sec);
+  }
 }
 RINJI.forEach((it) => document.getElementById("rinji").append(item(it)));
 PREP.forEach((it) => document.getElementById("prep").append(item(it)));
 
-function applyWhere() {
+function apply() {
+  document.querySelectorAll(".kind button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.kind === kind)));
   document.querySelectorAll(".where button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.where === where)));
-  document.querySelectorAll("#phases li").forEach((li) => { li.hidden = !(li.dataset.where === "all" || li.dataset.where === where); });
+  document.querySelectorAll("#phases section").forEach((sec) => {
+    const lis = [...sec.querySelectorAll("li")];
+    lis.forEach((li) => { li.hidden = !(li.dataset.where === "all" || li.dataset.where === where); });
+    sec.hidden = sec.dataset.kind !== kind || lis.every((li) => li.hidden);
+  });
+  document.getElementById("rinji-sec").hidden = kind !== "quake";
+  document.getElementById("alert-title").textContent = ALERTS[kind][0];
+  document.getElementById("alert-body").textContent = ALERTS[kind][1];
 }
-document.querySelectorAll(".where button").forEach((b) => b.addEventListener("click", () => { where = b.dataset.where; store.set(WHERE_STORE, where); applyWhere(); }));
-applyWhere();
+document.querySelectorAll(".where button").forEach((b) => b.addEventListener("click", () => { where = b.dataset.where; store.set(WHERE_STORE, where); apply(); }));
+document.querySelectorAll(".kind button").forEach((b) => b.addEventListener("click", () => { kind = b.dataset.kind; store.set(KIND_STORE, kind); apply(); }));
+apply();
 
 const reset = document.getElementById("reset");
 let armed = false;
