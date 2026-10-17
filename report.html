@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="現場メモ">
+<meta name="theme-color" content="#0d1418">
+<meta name="robots" content="noindex, nofollow">
+<title>家族の現場メモ</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: 地図 → 投稿ボタン → 新しい順の一覧。投稿はシートで下から出す。遠州灘カメラと同じ配色 */
+:root {
+  --bg: #0d1418;
+  --panel: #152026;
+  --line: #24343d;
+  --fg: #e6eef1;
+  --muted: #8ea3ad;
+  --sea: #4fb3c8;
+  --alert: #ff6b4a;
+  --ok: #5fbf7f;
+  --font-body: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+  --font-data: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) calc(32px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.wrap { max-width: 900px; margin: 0 auto; display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding-top: 16px; }
+h1 { font-size: 1.35rem; margin: 0; }
+header nav { display: flex; gap: 14px; font-size: 13px; }
+a { color: var(--sea); }
+.status { font: 12px/1.4 var(--font-data); color: var(--muted); }
+.status.err { color: var(--alert); }
+button, select, input, textarea {
+  font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px;
+}
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
+.primary { background: var(--sea); color: #06232a; border-color: var(--sea); font-weight: 700; }
+#map { height: 52vh; min-height: 300px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c); margin-right: 4px; vertical-align: -1px; }
+.list { display: grid; gap: 10px; }
+.post { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; min-width: 0; }
+.post.aging { opacity: .8; }
+.post.stale { opacity: .5; }
+.post.resolved { border-left-color: var(--muted); opacity: .55; }
+.post .head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.post .cat { font-weight: 700; }
+.post .time { font: 12px/1.4 var(--font-data); color: var(--muted); }
+.post .badge { font-size: 11px; border: 1px solid var(--muted); color: var(--muted); border-radius: 999px; padding: 0 8px; }
+.post .note { overflow-wrap: anywhere; }
+.post .meta { font-size: 12px; color: var(--muted); }
+.post .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.post .actions button { padding: 4px 10px; font-size: 13px; }
+.post img { max-width: 100%; border-radius: 8px; }
+.empty { color: var(--muted); font-size: 14px; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+  background: var(--bg); border-top: 1px solid var(--line);
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  max-height: 88vh; overflow-y: auto;
+}
+.sheet form, .gate { max-width: 600px; margin: 0 auto; display: grid; gap: 12px; }
+.sheet h2, .gate h2 { margin: 0; font-size: 1.1rem; }
+label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+label > * { color: var(--fg); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.gate { padding-top: 24px; }
+.leaflet-container { font: inherit; }
+.leaflet-popup-content { margin: 10px 12px; }
+@media (prefers-reduced-motion: reduce) { .leaflet-fade-anim .leaflet-popup { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>家族の現場メモ</h1>
+    <nav><a href="./">遠州灘カメラ</a><a href="#" id="change-key">合言葉を変える</a></nav>
+  </header>
+
+  <section class="gate" id="gate" hidden>
+    <h2>合言葉を入れてください</h2>
+    <p class="hint">家族で決めた合言葉です。一度入れると、この端末に記憶されます。</p>
+    <form id="gate-form" class="row">
+      <input id="gate-key" type="password" autocomplete="current-password" required style="flex:1;min-width:0">
+      <button class="primary" type="submit">開く</button>
+    </form>
+    <p class="status" id="gate-status"></p>
+  </section>
+
+  <main id="app" class="wrap" hidden>
+    <div id="map" role="region" aria-label="投稿の地図"></div>
+    <div class="bar">
+      <button class="primary" id="open-form" type="button">＋ 現場の情報を投稿</button>
+      <span class="status" id="status">読み込み中…</span>
+    </div>
+    <div class="legend" id="legend"></div>
+    <p class="hint">投稿から3時間を過ぎると薄く、24時間を過ぎるとさらに薄く表示します。直近7日分を表示します。</p>
+    <div class="list" id="list"></div>
+  </main>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <form id="post-form">
+    <h2>現場の情報を投稿</h2>
+    <label>種類
+      <select id="f-category" required></select>
+    </label>
+    <div class="row">
+      <button type="button" id="f-here">現在地を使う</button>
+      <span class="hint" id="f-loc">地図をタップして場所を選ぶこともできます</span>
+    </div>
+    <label>場所の目印
+      <input id="f-place" maxlength="80" placeholder="例: 浜松城公園の北側の交差点">
+    </label>
+    <label>状況
+      <textarea id="f-note" rows="3" maxlength="300" placeholder="例: 深さ20cmほど冠水。車は引き返している"></textarea>
+    </label>
+    <label>写真（任意）
+      <input id="f-photo" type="file" accept="image/*">
+    </label>
+    <label>投稿する人
+      <input id="f-reporter" maxlength="20" placeholder="例: 父">
+    </label>
+    <div class="row">
+      <button class="primary" type="submit" id="f-submit">投稿する</button>
+      <button type="button" id="f-cancel">やめる</button>
+    </div>
+    <p class="status" id="f-status"></p>
+  </form>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// Google Apps Script のウェブアプリ URL（デプロイ後に設定する）
+const ENDPOINT = "https://script.google.com/macros/s/AKfycby1BZ27ACp4qWRnZgO4h3tPkbVeOYgMn9HJLrOuIvBtZ6InZuZKvSJQFaam90pS8Pvm/exec";
+
+const CATS = {
+  flood:   { label: "冠水", color: "#4f8fe8" },
+  blocked: { label: "通行止め・倒木・落石", color: "#ff6b4a" },
+  shelter: { label: "避難所の混雑", color: "#c58af0" },
+  toilet:  { label: "トイレ", color: "#e8c547" },
+  outage:  { label: "停電・断水", color: "#9aa6b6" },
+  water:   { label: "給水・配布の待ち", color: "#4fc8b0" },
+  store:   { label: "店舗の営業", color: "#5fbf7f" },
+  signal:  { label: "携帯の通信", color: "#e88f4f" },
+  hazard:  { label: "その他の危険", color: "#ff4a8d" },
+};
+const HOME = [34.704, 137.735]; // 浜松駅付近
+const KEY_STORE = "family-report-key";
+const NAME_STORE = "family-report-name";
+
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 記憶できなくても動く */ } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) { /* noop */ } },
+};
+
+let familyKey = store.get(KEY_STORE);
+let map, layer, pick = null, pickMarker = null;
+
+async function api(action, extra = {}) {
+  if (!ENDPOINT) throw new Error("not_configured");
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ action, key: familyKey, ...extra }),
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || "error");
+  return data;
+}
+
+function errorText(e) {
+  const m = e && e.message;
+  if (m === "not_configured") return "保存先がまだ設定されていません。";
+  if (m === "bad_key") return "合言葉が違います。";
+  if (m === "bad_photo") return "写真を小さくできませんでした。別の写真を選んでください。";
+  if (m === "bad_location") return "場所が選ばれていません。";
+  return "通信できませんでした。電波のよい場所で、もう一度試してください。";
+}
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  const rel = mins < 1 ? "たった今" : mins < 60 ? `${mins}分前` : mins < 1440 ? `${Math.floor(mins / 60)}時間前` : `${Math.floor(mins / 1440)}日前`;
+  const abs = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${abs}（${rel}）`;
+}
+
+function freshness(p) {
+  if (p.status === "resolved") return "resolved";
+  const h = (Date.now() - new Date(p.createdAt).getTime()) / 3600000;
+  return h < 3 ? "fresh" : h < 24 ? "aging" : "stale";
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function initMap() {
+  map = L.map("map", { zoomControl: true }).setView(HOME, 14);
+  L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>',
+  }).addTo(map);
+  layer = L.layerGroup().addTo(map);
+  map.on("click", (ev) => { if (!$("sheet").hidden) setPick(ev.latlng.lat, ev.latlng.lng, "地図で選んだ場所"); });
+}
+
+function setPick(lat, lng, label) {
+  pick = { lat, lng };
+  $("f-loc").textContent = `${label}（${lat.toFixed(5)}, ${lng.toFixed(5)}）`;
+  if (pickMarker) pickMarker.remove();
+  pickMarker = L.marker([lat, lng]).addTo(map);
+}
+
+function render(posts) {
+  layer.clearLayers();
+  const list = $("list");
+  list.replaceChildren();
+  if (!posts.length) {
+    list.appendChild(el("p", "empty", "まだ投稿はありません。「＋ 現場の情報を投稿」から、見た状況を写真つきで残せます。"));
+    return;
+  }
+  posts.forEach((p) => {
+    const cat = CATS[p.category] || { label: p.category, color: "#9aa6b6" };
+    const fr = freshness(p);
+    const op = { fresh: 1, aging: 0.75, stale: 0.45, resolved: 0.35 }[fr];
+    const marker = L.circleMarker([p.lat, p.lng], {
+      radius: 9, color: "#0d1418", weight: 2,
+      fillColor: fr === "resolved" ? "#8ea3ad" : cat.color, fillOpacity: op, opacity: op,
+    }).addTo(layer);
+
+    const card = el("article", `post ${fr}`);
+    card.style.setProperty("--c", cat.color);
+    const head = el("div", "head");
+    head.append(el("span", "cat", cat.label), el("span", "time", fmtTime(p.createdAt)));
+    if (fr === "resolved") head.append(el("span", "badge", `解消 ${fmtTime(p.resolvedAt)}`));
+    card.append(head);
+    if (p.place) card.append(el("div", "", p.place));
+    if (p.note) card.append(el("div", "note", p.note));
+    card.append(el("div", "meta", `投稿: ${p.reporter || "名前なし"}`));
+
+    const actions = el("div", "actions");
+    const show = el("button", "", "地図で見る");
+    show.type = "button";
+    show.addEventListener("click", () => { map.setView([p.lat, p.lng], 16); marker.openPopup(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+    actions.append(show);
+    if (p.hasPhoto) {
+      const btn = el("button", "", "写真を見る");
+      btn.type = "button";
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "読み込み中…";
+        try {
+          const { photo } = await api("photo", { id: p.id });
+          const img = el("img"); img.alt = `${cat.label}の写真`; img.src = photo;
+          card.append(img); btn.remove();
+        } catch (e) { btn.disabled = false; btn.textContent = "写真を見る"; setStatus(errorText(e), true); }
+      });
+      actions.append(btn);
+    }
+    if (p.status !== "resolved") {
+      const done = el("button", "", "解消した");
+      done.type = "button";
+      done.addEventListener("click", async () => {
+        done.disabled = true;
+        try { await api("resolve", { id: p.id }); await load(); } catch (e) { done.disabled = false; setStatus(errorText(e), true); }
+      });
+      actions.append(done);
+    }
+    card.append(actions);
+    $("list").appendChild(card);
+
+    const pop = el("div");
+    pop.append(el("strong", "", cat.label), el("div", "", fmtTime(p.createdAt)));
+    if (p.place) pop.append(el("div", "", p.place));
+    if (p.note) pop.append(el("div", "", p.note));
+    marker.bindPopup(pop);
+  });
+}
+
+function setStatus(text, isErr = false) {
+  const s = $("status");
+  s.textContent = text;
+  s.classList.toggle("err", isErr);
+}
+
+async function load() {
+  try {
+    const { posts } = await api("list");
+    render(posts);
+    const d = new Date();
+    setStatus(`最終更新 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`);
+  } catch (e) {
+    if (e.message === "bad_key") { store.del(KEY_STORE); familyKey = ""; showGate("合言葉が違います。"); return; }
+    setStatus(errorText(e), true);
+  }
+}
+
+async function compress(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = url; });
+    const scale = Math.min(1, 480 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    for (let q = 0.7; q >= 0.3; q -= 0.1) {
+      const data = c.toDataURL("image/jpeg", q);
+      if (data.length <= 47000) return data;
+    }
+    throw new Error("bad_photo");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function showGate(msg = "") {
+  $("gate").hidden = false;
+  $("app").hidden = true;
+  $("gate-status").textContent = msg;
+}
+
+function showApp() {
+  $("gate").hidden = true;
+  $("app").hidden = false;
+  if (!map) initMap(); else map.invalidateSize();
+  load();
+}
+
+function openSheet() {
+  $("sheet").hidden = false;
+  $("f-status").textContent = "";
+  $("f-reporter").value = store.get(NAME_STORE);
+}
+
+function closeSheet() {
+  $("sheet").hidden = true;
+  $("post-form").reset();
+  pick = null;
+  if (pickMarker) { pickMarker.remove(); pickMarker = null; }
+  $("f-loc").textContent = "地図をタップして場所を選ぶこともできます";
+}
+
+// 凡例と種類の選択肢
+for (const [k, c] of Object.entries(CATS)) {
+  const s = el("span", "", c.label); s.style.setProperty("--c", c.color); $("legend").append(s);
+  const o = el("option", "", c.label); o.value = k; $("f-category").append(o);
+}
+
+$("gate-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  familyKey = $("gate-key").value.trim();
+  $("gate-status").textContent = "確認中…";
+  try {
+    await api("list");
+    store.set(KEY_STORE, familyKey);
+    $("gate-key").value = "";
+    showApp();
+  } catch (e) {
+    $("gate-status").textContent = errorText(e);
+  }
+});
+
+$("change-key").addEventListener("click", (ev) => {
+  ev.preventDefault();
+  store.del(KEY_STORE); familyKey = "";
+  showGate();
+});
+
+$("open-form").addEventListener("click", openSheet);
+$("f-cancel").addEventListener("click", closeSheet);
+
+$("f-here").addEventListener("click", () => {
+  if (!navigator.geolocation) { $("f-loc").textContent = "この端末では現在地が使えません。地図をタップしてください。"; return; }
+  $("f-loc").textContent = "現在地を確認中…";
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { setPick(pos.coords.latitude, pos.coords.longitude, "現在地"); map.setView([pos.coords.latitude, pos.coords.longitude], 16); },
+    () => { $("f-loc").textContent = "現在地を取れませんでした。地図をタップして選んでください。"; },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+  );
+});
+
+$("post-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!pick) { $("f-status").textContent = "場所を選んでください（現在地を使う、または地図をタップ）。"; return; }
+  const btn = $("f-submit");
+  btn.disabled = true;
+  $("f-status").textContent = "送信中…";
+  try {
+    const file = $("f-photo").files[0];
+    const photo = file ? await compress(file) : "";
+    const reporter = $("f-reporter").value.trim();
+    store.set(NAME_STORE, reporter);
+    await api("add", {
+      category: $("f-category").value, lat: pick.lat, lng: pick.lng,
+      place: $("f-place").value.trim(), note: $("f-note").value.trim(), reporter, photo,
+    });
+    closeSheet();
+    await load();
+  } catch (e) {
+    $("f-status").textContent = errorText(e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+if (familyKey) showApp(); else showGate(ENDPOINT ? "" : "保存先がまだ設定されていません。");
+setInterval(() => { if (!document.hidden && !$("app").hidden) load(); }, 120000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").hidden) load(); });
+</script>
+</body>
+</html>
