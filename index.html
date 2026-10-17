@@ -69,6 +69,7 @@ h2 small { color: var(--muted); letter-spacing: 0; font-weight: 400; margin-left
   border-radius: 10px; color: var(--fg); text-decoration: none;
 }
 .links a span { display: block; color: var(--muted); font-size: 12px; }
+.jump a { color: var(--sea); font-size: 14px; }
 footer { color: var(--muted); font-size: 12px; }
 @media (prefers-reduced-motion: no-preference) { .cam img { transition: opacity .3s; } }
 </style>
@@ -87,6 +88,8 @@ footer { color: var(--muted); font-size: 12px; }
     <strong>津波警報・大津波警報が出たら、映像を見る前に避難する</strong>
     <p>映像に波が映るときには、もう逃げる時間がありません。このページは避難を終えてから、または注意報のときの状況確認に使います。</p>
   </div>
+
+  <nav class="jump"><a href="#info">災害時の公式情報へ ↓</a></nav>
 
   <section>
     <h2>海<small>遠州灘・浜名湖の湖口</small></h2>
@@ -108,20 +111,58 @@ footer { color: var(--muted); font-size: 12px; }
     <div class="grid" id="road"></div>
   </section>
 
-  <section>
-    <h2>公式情報</h2>
+  <section id="info">
+    <h2>地震・津波</h2>
     <div class="links">
       <a href="https://www.jma.go.jp/bosai/map.html#contents=tsunami" target="_blank" rel="noopener">気象庁 津波警報・注意報<span>警報の種類と到達予想</span></a>
       <a href="https://www.jma.go.jp/bosai/map.html#contents=earthquake_map" target="_blank" rel="noopener">気象庁 震度情報<span>地震の震源と各地の震度</span></a>
       <a href="https://www.data.jma.go.jp/eqev/data/nteq/index.html" target="_blank" rel="noopener">南海トラフ地震に関連する情報<span>臨時情報（巨大地震注意・警戒）</span></a>
+    </div>
+  </section>
+
+  <section>
+    <h2>道路の冠水・通行止め</h2>
+    <div class="links">
+      <a href="https://gis1.hbosai.com/bousai/app/index.html" target="_blank" rel="noopener">浜松市防災マップ<span>通行止め・冠水センサー（リアルタイム情報 → 道路情報）</span></a>
+      <a href="https://www.its-jp.org/saigai/" target="_blank" rel="noopener">ITS Japan 通行実績<span>大規模災害時に、実際に車が通れた道</span></a>
+      <a href="https://www.toyota.co.jp/jpn/auto/passable_route/map/" target="_blank" rel="noopener">トヨタ 通れた道マップ<span>大規模災害時に公開</span></a>
+      <a href="https://www.cbr.mlit.go.jp/hamamatsu/live_view_road/pc/" target="_blank" rel="noopener">国道1号の道路カメラ<span>浜松河川国道事務所</span></a>
+      <a href="https://www.river.go.jp/" target="_blank" rel="noopener">川の防災情報<span>天竜川などの水位とカメラ（国交省）</span></a>
       <a href="https://www.cam.shizuoka4.jp/" target="_blank" rel="noopener">静岡県 河川監視カメラ<span>県内の全カメラ</span></a>
-      <a href="https://www.river.go.jp/" target="_blank" rel="noopener">川の防災情報（国交省）<span>天竜川などの水位とカメラ</span></a>
-      <a href="https://www.cbr.mlit.go.jp/hamamatsu/live_view_road/pc/" target="_blank" rel="noopener">浜松河川国道事務所 道路カメラ<span>国道1号・三遠南信道</span></a>
+    </div>
+  </section>
+
+  <section>
+    <h2>避難所・給水</h2>
+    <div class="links">
+      <a href="https://gis1.hbosai.com/bousai/app/index.html" target="_blank" rel="noopener">浜松市防災マップ<span>避難所の開設と混雑（青・黄・赤の3段階）</span></a>
+      <a href="https://www.city.hamamatsu.shizuoka.jp/suidow-s/kyuusuibasyo.html" target="_blank" rel="noopener">浜松市 給水拠点<span>開設中の避難所が給水拠点になる</span></a>
+      <a href="https://crisis.yahoo.co.jp/map/" target="_blank" rel="noopener">Yahoo! 災害マップ<span>避難所・給水・入浴・トイレ（大規模災害時）。利用者の投稿も含む</span></a>
+      <a href="https://xview.bosai.go.jp/" target="_blank" rel="noopener">防災クロスビュー<span>大規模災害時に開設。生活支援・道路・通信をまとめて表示</span></a>
+    </div>
+  </section>
+
+  <section>
+    <h2>停電・断水</h2>
+    <div class="links">
+      <a href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener">中部電力パワーグリッド 停電情報<span>地区ごとの停電と復旧見込み</span></a>
+      <a href="https://www.city.hamamatsu.shizuoka.jp/shinse/suido/index.html" target="_blank" rel="noopener">浜松市 上下水道<span>断水・漏水のお知らせ</span></a>
+      <a href="https://www.city.hamamatsu.shizuoka.jp/bousai/" target="_blank" rel="noopener">浜松市 防災情報<span>避難情報・市からのお知らせ</span></a>
+    </div>
+  </section>
+
+  <section>
+    <h2>携帯の通信</h2>
+    <div class="links">
+      <a href="https://www.docomo.ne.jp/info/network/" target="_blank" rel="noopener">ドコモ 通信障害<span>災害時は復旧エリアマップもここから</span></a>
+      <a href="https://www.au.com/information/notice_mobile/network/" target="_blank" rel="noopener">au 通信障害<span>災害時は復旧エリアマップもここから</span></a>
+      <a href="https://www.softbank.jp/mobile/info/personal/important/" target="_blank" rel="noopener">ソフトバンク 障害情報<span>災害時は復旧エリアマップもここから</span></a>
+      <a href="https://network.mobile.rakuten.co.jp/information/" target="_blank" rel="noopener">楽天モバイル お知らせ<span>障害・災害時のお知らせ</span></a>
     </div>
   </section>
 
   <footer>
-    画像は各管理者の公開カメラから直接読み込んでいます（静岡県、国土交通省 浜松河川国道事務所、ZAZAマガジン、静岡朝日テレビ）。60秒ごとに自動で再読み込みします。カメラ側の更新間隔は約1〜2分です。
+    画像は各管理者の公開カメラから直接読み込んでいます（静岡県、国土交通省 浜松河川国道事務所、ZAZAマガジン、静岡朝日テレビ）。60秒ごとに自動で再読み込みします。カメラ側の更新間隔は約1〜2分で、撮影時刻は画像の中に表示されます。リンク先の情報も、更新時刻と出どころ（公式か利用者の投稿か）を確かめてから使ってください。
   </footer>
 </div>
 
