@@ -81,6 +81,10 @@ label > * { color: var(--fg); }
 .gate { padding-top: 24px; }
 .leaflet-container { font: inherit; }
 .leaflet-popup-content { margin: 10px 12px; }
+.place-icon span { display: block; width: 12px; height: 12px; border-radius: 2px; border: 2px solid #0d1418; box-sizing: border-box; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.leaflet-control-layers { background: var(--panel); color: var(--fg); border: 1px solid var(--line) !important; }
+.leaflet-control-layers-expanded { padding: 8px 10px; font-size: 13px; line-height: 1.8; }
 @media (prefers-reduced-motion: reduce) { .leaflet-fade-anim .leaflet-popup { transition: none; } }
 </style>
 </head>
@@ -88,7 +92,7 @@ label > * { color: var(--fg); }
 <div class="wrap">
   <header>
     <h1>家族の現場メモ</h1>
-    <nav><a href="./">遠州灘カメラ</a><a href="#" id="change-key">合言葉を変える</a></nav>
+    <nav><a href="./">遠州灘カメラ</a><a href="checklist.html">今やること</a><a href="#" id="change-key">合言葉を変える</a></nav>
   </header>
 
   <section class="gate" id="gate" hidden>
@@ -108,7 +112,7 @@ label > * { color: var(--fg); }
       <span class="status" id="status">読み込み中…</span>
     </div>
     <div class="legend" id="legend"></div>
-    <p class="hint">投稿から3時間を過ぎると薄く、24時間を過ぎるとさらに薄く表示します。直近7日分を表示します。</p>
+    <p class="hint">投稿（丸）は3時間を過ぎると薄く、24時間を過ぎるとさらに薄く表示します。直近7日分です。避難所やトイレなどの場所（四角）は、地図の右上のボタンで表示を切り替えられます。</p>
     <div class="list" id="list"></div>
   </main>
 </div>
@@ -223,6 +227,46 @@ function initMap() {
   }).addTo(map);
   layer = L.layerGroup().addTo(map);
   map.on("click", (ev) => { if (!$("sheet").hidden) setPick(ev.latlng.lat, ev.latlng.lng, "地図で選んだ場所"); });
+  loadPlaces();
+}
+
+// 平時に用意した場所（国土地理院の避難場所データ、浜松市の冠水センサー、OpenStreetMap）
+const PLACE_LAYERS = {
+  tsunami: { label: "津波のときに逃げられる場所", color: "#2fbf71", on: true },
+  shelter: { label: "指定避難所（給水拠点）", color: "#4fb3c8", on: true },
+  kansui:  { label: "冠水センサー", color: "#4f8fe8", on: true },
+  toilet:  { label: "トイレ", color: "#e8c547", on: false },
+  bath:    { label: "銭湯・入浴施設", color: "#e88f4f", on: false },
+  laundry: { label: "コインランドリー", color: "#c58af0", on: false },
+};
+const LAYER_STORE = "family-report-layers";
+
+async function loadPlaces() {
+  let data;
+  try {
+    data = await (await fetch("data/places.json")).json();
+  } catch (e) {
+    return; // 場所の層がなくても投稿の地図は使える
+  }
+  let saved = {};
+  try { saved = JSON.parse(store.get(LAYER_STORE) || "{}"); } catch (e) { saved = {}; }
+  const overlays = {};
+  for (const [key, def] of Object.entries(PLACE_LAYERS)) {
+    const rows = data.layers[key] || [];
+    const icon = L.divIcon({ className: "place-icon", html: `<span style="background:${def.color}"></span>`, iconSize: [12, 12] });
+    const group = L.layerGroup(rows.map(([lat, lng, name, extra]) => {
+      const pop = el("div");
+      pop.append(el("strong", "", name), el("div", "", def.label));
+      if (extra) pop.append(el("div", "", extra));
+      return L.marker([lat, lng], { icon, keyboard: false }).bindPopup(pop);
+    }));
+    const on = key in saved ? saved[key] : def.on;
+    if (on) group.addTo(map);
+    overlays[`<span class="swatch" style="background:${def.color}"></span>${def.label}（${rows.length}）`] = group;
+    group.on("add remove", (ev) => { saved[key] = ev.type === "add"; store.set(LAYER_STORE, JSON.stringify(saved)); });
+  }
+  L.control.layers(null, overlays, { collapsed: true, position: "topright" }).addTo(map);
+  map.attributionControl.addAttribution(`場所: 国土地理院 指定緊急避難場所・指定避難所データ、浜松市 冠水センサー、© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors（${data.generated} 時点）`);
 }
 
 function setPick(lat, lng, label) {
@@ -427,6 +471,7 @@ $("post-form").addEventListener("submit", async (ev) => {
 if (familyKey) showApp(); else showGate(ENDPOINT ? "" : "保存先がまだ設定されていません。");
 setInterval(() => { if (!document.hidden && !$("app").hidden) load(); }, 120000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").hidden) load(); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>

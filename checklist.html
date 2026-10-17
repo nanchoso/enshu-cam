@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="今やること">
+<meta name="theme-color" content="#0d1418">
+<meta name="robots" content="noindex, nofollow">
+<title>地震のとき今やること</title>
+<style>
+/* Layout: 場所の切り替え → 時間順の段（揺れている間 → 5分 → 1時間 → 3日）→ 臨時情報 → 事前の準備。電波なしで開ける */
+:root {
+  --bg: #0d1418;
+  --panel: #152026;
+  --line: #24343d;
+  --fg: #e6eef1;
+  --muted: #8ea3ad;
+  --sea: #4fb3c8;
+  --alert: #ff6b4a;
+  --alert-bg: #3a1a12;
+  --done: #5fbf7f;
+  --font-body: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+  --font-data: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 16px/1.65 var(--font-body);
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) calc(32px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.wrap { max-width: 720px; margin: 0 auto; display: grid; gap: 22px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding-top: 16px; }
+h1 { font-size: 1.35rem; margin: 0; }
+header nav { display: flex; gap: 14px; font-size: 13px; }
+a { color: var(--sea); }
+.alert { background: var(--alert-bg); border: 1px solid var(--alert); border-radius: 10px; padding: 12px 14px; }
+.alert strong { color: var(--alert); display: block; font-size: 1.05rem; }
+.alert p { margin: 4px 0 0; }
+.where { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); padding-block: 8px; z-index: 2; }
+.where button {
+  font: inherit; font-size: 15px; color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 4px; cursor: pointer;
+}
+.where button[aria-pressed="true"] { background: var(--sea); color: #06232a; border-color: var(--sea); font-weight: 700; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
+section { display: grid; gap: 8px; }
+h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+h2 small { font: 12px/1.4 var(--font-data); color: var(--muted); font-weight: 400; }
+.items { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.items label {
+  display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: start;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer;
+}
+.items input { width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--done); }
+.items .t { min-width: 0; overflow-wrap: anywhere; }
+.items .t small { display: block; color: var(--muted); font-size: 13px; }
+.items input:checked + .t { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--done); }
+.items input:checked + .t small { text-decoration: none; }
+.key { color: var(--alert); font-weight: 700; }
+.foot { display: grid; gap: 8px; color: var(--muted); font-size: 13px; }
+.foot button { justify-self: start; font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.foot button.confirm { border-color: var(--alert); color: var(--alert); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>地震のとき今やること</h1>
+    <nav><a href="./">遠州灘カメラ</a><a href="report.html">現場メモ</a></nav>
+  </header>
+
+  <div class="alert" role="note">
+    <strong>強い揺れ・長い揺れを感じたら、津波警報を待たずに逃げる</strong>
+    <p>海岸から離れていても、低く平らな土地では津波が来るおそれがあります。迷ったら高い所へ。</p>
+  </div>
+
+  <div class="where" role="group" aria-label="今いる場所">
+    <button type="button" data-where="home" aria-pressed="true">自宅</button>
+    <button type="button" data-where="work" aria-pressed="false">職場</button>
+    <button type="button" data-where="car" aria-pressed="false">外出中・車</button>
+  </div>
+
+  <div id="phases"></div>
+
+  <section>
+    <h2>南海トラフ地震臨時情報が出たら</h2>
+    <ul class="items" id="rinji"></ul>
+  </section>
+
+  <section>
+    <h2>平時にやっておくこと</h2>
+    <ul class="items" id="prep"></ul>
+  </section>
+
+  <div class="foot">
+    <p>このページは一度開いておくと、電波がないときも開けます。チェックはこの端末にだけ記録されます。</p>
+    <button type="button" id="reset">チェックを全部外す</button>
+  </div>
+</div>
+
+<script>
+// where: all / home / work / car。key: true は特に大事な行動
+const PHASES = [
+  { title: "揺れている間", time: "0〜1分", items: [
+    { id: "s1", where: "home", text: "頭を守り、家具や窓から離れる", note: "机の下に入るか、クッションなどで頭を覆う" },
+    { id: "s2", where: "home", text: "火を消しに行かない", note: "揺れが収まってから落ち着いて消す" },
+    { id: "s3", where: "work", text: "机の下に入り、窓や棚から離れる" },
+    { id: "s4", where: "car", text: "ハザードランプをつけ、ゆっくり減速して道路の左に止める", note: "急ブレーキはかけない。揺れが収まるまで車内でラジオを聞く" },
+    { id: "s5", where: "car", text: "歩いているときは、看板・ガラス・ブロック塀から離れる" },
+  ]},
+  { title: "揺れが収まったら", time: "〜5分", items: [
+    { id: "a1", where: "all", key: true, text: "強い揺れ・長い揺れだったら、警報を待たずに避難を始める" },
+    { id: "a2", where: "all", text: "津波警報・大津波警報をスマホかラジオで確かめる" },
+    { id: "a3", where: "all", text: "逃げる先は高台か津波避難ビル", note: "現場メモの地図の「津波のときに逃げられる場所」。自宅が想定より十分高い階なら、建物の上の階にとどまるのも選択肢" },
+    { id: "a4", where: "home", text: "靴をはく", note: "割れたガラスや食器でけがをしやすい" },
+    { id: "a5", where: "home", text: "玄関のドアを開けて、出口を確保する" },
+    { id: "a6", where: "home", text: "家を離れるときは、ブレーカーを落とし、ガスの元栓を閉める", note: "停電から戻ったときの火災（通電火災）を防ぐ" },
+    { id: "a7", where: "home", text: "エレベーターは使わず、階段で動く" },
+    { id: "a8", where: "work", text: "職場の避難の指示に従い、階段で動く" },
+    { id: "a9", where: "car", key: true, text: "津波のおそれがあれば、車を置いて歩いて逃げる", note: "車は渋滞で動けなくなりやすい" },
+    { id: "a10", where: "car", text: "車を離れるときは、キーをつけたまま、ドアをロックしない", note: "緊急車両の通行のために車を動かせるようにする。連絡先のメモを残す" },
+  ]},
+  { title: "落ち着いたら", time: "〜1時間", items: [
+    { id: "b1", where: "all", text: "両親の安否を確かめる", note: "LINE、災害用伝言ダイヤル 171、web171。電話は混み合うので短く" },
+    { id: "b2", where: "all", key: true, text: "津波は何度も来る。警報・注意報が解除されるまで、海や川に近づかない・戻らない" },
+    { id: "b3", where: "all", text: "さらに大きな地震に備える", note: "南海トラフでは、続けて別の巨大地震が起きることがある" },
+    { id: "b4", where: "home", text: "火災・ガス漏れ・水漏れがないか確かめ、近所に声をかける" },
+    { id: "b5", where: "work", text: "帰宅は急がず、職場にとどまる判断も考える", note: "道路や鉄道の状況を確かめてから動く" },
+    { id: "b6", where: "all", text: "公式の情報とカメラで状況を確かめる", note: "遠州灘カメラのページの「災害時の公式情報」" },
+  ]},
+  { title: "その後の暮らし", time: "〜3日", items: [
+    { id: "c1", where: "home", text: "建物に大きな被害がなければ、自宅で過ごす（在宅避難）", note: "避難所の混雑は浜松市防災マップで見られる" },
+    { id: "c2", where: "home", key: true, text: "トイレは流さず、携帯トイレを使う", note: "マンションは排水管の安全が確かめられるまで流さない。下の階で逆流するおそれがある" },
+    { id: "c3", where: "all", text: "水と食料は備蓄から。給水は開設中の避難所で受け取れる", note: "ポリタンクなどの容器を持っていく" },
+    { id: "c4", where: "home", text: "冷蔵庫の中の物から食べる" },
+    { id: "c5", where: "all", text: "スマホを節電する", note: "低電力モード、画面を暗く。モバイルバッテリーを使う" },
+    { id: "c6", where: "home", text: "電気が戻ったら、ブレーカーを戻す前に、ガス漏れと電気製品の破損を確かめる" },
+    { id: "c7", where: "all", text: "見た状況を家族の現場メモに投稿する", note: "写真と場所をつける" },
+  ]},
+];
+
+const RINJI = [
+  { id: "r1", text: "「巨大地震注意」：1週間ほど、すぐ逃げられる準備をして過ごす", note: "持ち出し袋、避難経路、家具の固定を確かめる" },
+  { id: "r2", text: "「巨大地震警戒」：1週間ほど、すぐ逃げられる態勢で過ごす", note: "市が決めた事前避難の対象地域なら避難する。対象かどうかは市の発表で確かめる" },
+  { id: "r3", text: "水をためる、スマホとモバイルバッテリーを充電する、車の燃料を入れておく" },
+  { id: "r4", text: "両親と連絡の取り方を確かめ合う" },
+];
+
+const PREP = [
+  { id: "p1", text: "自宅・職場・実家の想定浸水の深さを確かめる", note: "浜松市防災マップの津波浸水想定" },
+  { id: "p2", text: "両親との集合場所（第1・第2）と連絡の順番を決める" },
+  { id: "p3", text: "水を備える：1人1日3リットルを最低3日分、できれば1週間分" },
+  { id: "p4", text: "携帯トイレを1週間分（1日5回ほど）用意する" },
+  { id: "p5", text: "モバイルバッテリーとラジオを用意する" },
+  { id: "p6", text: "家具を固定し、寝る場所の近くに倒れる物を置かない" },
+  { id: "p7", text: "このページ、遠州灘カメラ、現場メモをホーム画面に追加して、一度開いておく" },
+];
+
+const CHECK_STORE = "checklist-done";
+const WHERE_STORE = "checklist-where";
+const store = {
+  get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 記録できなくても使える */ } },
+};
+let done = {};
+try { done = JSON.parse(store.get(CHECK_STORE) || "{}"); } catch (e) { done = {}; }
+let where = store.get(WHERE_STORE) || "home";
+
+function item(it) {
+  const li = document.createElement("li");
+  li.dataset.where = it.where || "all";
+  const label = document.createElement("label");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.id = `chk-${it.id}`;
+  box.checked = Boolean(done[it.id]);
+  box.addEventListener("change", () => { done[it.id] = box.checked; store.set(CHECK_STORE, JSON.stringify(done)); });
+  const t = document.createElement("span");
+  t.className = "t";
+  const main = document.createElement("span");
+  main.textContent = it.text;
+  if (it.key) main.className = "key";
+  t.append(main);
+  if (it.note) { const s = document.createElement("small"); s.textContent = it.note; t.append(s); }
+  label.append(box, t);
+  li.append(label);
+  return li;
+}
+
+const phases = document.getElementById("phases");
+phases.style.display = "grid";
+phases.style.gap = "22px";
+for (const p of PHASES) {
+  const sec = document.createElement("section");
+  const h = document.createElement("h2");
+  h.textContent = p.title;
+  const s = document.createElement("small"); s.textContent = p.time; h.append(s);
+  const ul = document.createElement("ul"); ul.className = "items";
+  p.items.forEach((it) => ul.append(item(it)));
+  sec.append(h, ul);
+  phases.append(sec);
+}
+RINJI.forEach((it) => document.getElementById("rinji").append(item(it)));
+PREP.forEach((it) => document.getElementById("prep").append(item(it)));
+
+function applyWhere() {
+  document.querySelectorAll(".where button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.where === where)));
+  document.querySelectorAll("#phases li").forEach((li) => { li.hidden = !(li.dataset.where === "all" || li.dataset.where === where); });
+}
+document.querySelectorAll(".where button").forEach((b) => b.addEventListener("click", () => { where = b.dataset.where; store.set(WHERE_STORE, where); applyWhere(); }));
+applyWhere();
+
+const reset = document.getElementById("reset");
+let armed = false;
+reset.addEventListener("click", () => {
+  if (!armed) {
+    armed = true; reset.textContent = "もう一度押すと全部外します"; reset.classList.add("confirm");
+    setTimeout(() => { armed = false; reset.textContent = "チェックを全部外す"; reset.classList.remove("confirm"); }, 4000);
+    return;
+  }
+  done = {}; store.set(CHECK_STORE, "{}");
+  document.querySelectorAll(".items input").forEach((b) => { b.checked = false; });
+  armed = false; reset.textContent = "チェックを全部外す"; reset.classList.remove("confirm");
+});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
