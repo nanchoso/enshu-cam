@@ -93,9 +93,9 @@ label > * { color: var(--fg); }
 
   <section class="gate" id="gate" hidden>
     <h2>合言葉を入れてください</h2>
-    <p class="hint">家族で決めた合言葉です。一度入れると、この端末に記憶されます。</p>
+    <p class="hint">家族で決めた合言葉です（日本語のままで入力できます）。一度入れると、この端末に記憶されます。</p>
     <form id="gate-form" class="row">
-      <input id="gate-key" type="password" autocomplete="current-password" required style="flex:1;min-width:0">
+      <input id="gate-key" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" lang="ja" required style="flex:1;min-width:0">
       <button class="primary" type="submit">開く</button>
     </form>
     <p class="status" id="gate-status"></p>
@@ -369,7 +369,7 @@ for (const [k, c] of Object.entries(CATS)) {
 
 $("gate-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  familyKey = $("gate-key").value.trim();
+  familyKey = $("gate-key").value.normalize("NFC").trim();
   $("gate-status").textContent = "確認中…";
   try {
     await api("list");
