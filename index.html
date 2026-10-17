@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="遠州灘カメラ">
+<meta name="theme-color" content="#0d1418">
+<meta name="robots" content="noindex, nofollow">
+<title>遠州灘カメラ</title>
+<style>
+/* Layout: 監視モニター。警告帯 → 海 → 河口 → 道路 → 公式情報。スマホ1列、広い画面で2〜3列 */
+:root {
+  --bg: #0d1418;
+  --panel: #152026;
+  --line: #24343d;
+  --fg: #e6eef1;
+  --muted: #8ea3ad;
+  --sea: #4fb3c8;
+  --alert: #ff6b4a;
+  --alert-bg: #3a1a12;
+  --font-body: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+  --font-data: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font: 15px/1.6 var(--font-body);
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) calc(32px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.wrap { max-width: 1200px; margin: 0 auto; display: grid; gap: 28px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; padding-top: 16px; }
+h1 { font-size: 1.35rem; margin: 0; letter-spacing: .02em; }
+.status { font: 12px/1.4 var(--font-data); color: var(--muted); display: flex; gap: 12px; align-items: center; }
+button {
+  font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer;
+}
+button:focus-visible, a:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; }
+.alert {
+  background: var(--alert-bg); border: 1px solid var(--alert); border-radius: 10px;
+  padding: 12px 14px; display: grid; gap: 4px;
+}
+.alert strong { color: var(--alert); font-size: 1.05rem; }
+.alert p { margin: 0; }
+section { display: grid; gap: 12px; }
+h2 { font-size: .8rem; letter-spacing: .12em; color: var(--sea); margin: 0; font-weight: 600; }
+h2 small { color: var(--muted); letter-spacing: 0; font-weight: 400; margin-left: 8px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.cam { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+.cam .view { position: relative; aspect-ratio: 4 / 3; background: #000; display: block; max-width: 100%; }
+.cam .view.wide { aspect-ratio: 16 / 9; }
+.cam img, .cam iframe { width: 100%; height: 100%; object-fit: cover; display: block; border: 0; }
+.cam .err {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  color: var(--muted); font-size: 13px; padding: 16px;
+}
+.cam .meta { padding: 10px 12px; display: grid; gap: 2px; }
+.cam .name { font-weight: 600; }
+.cam .desc { color: var(--muted); font-size: 13px; }
+.cam .src { font: 11px/1.4 var(--font-data); color: var(--muted); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cam a { color: var(--sea); }
+.links { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.links a {
+  display: block; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; color: var(--fg); text-decoration: none;
+}
+.links a span { display: block; color: var(--muted); font-size: 12px; }
+footer { color: var(--muted); font-size: 12px; }
+@media (prefers-reduced-motion: no-preference) { .cam img { transition: opacity .3s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>遠州灘カメラ</h1>
+    <div class="status">
+      <span id="updated">--:--</span>
+      <button id="reload" type="button">今すぐ更新</button>
+    </div>
+  </header>
+
+  <div class="alert" role="note">
+    <strong>津波警報・大津波警報が出たら、映像を見る前に避難する</strong>
+    <p>映像に波が映るときには、もう逃げる時間がありません。このページは避難を終えてから、または注意報のときの状況確認に使います。</p>
+  </div>
+
+  <section>
+    <h2>海<small>遠州灘・浜名湖の湖口</small></h2>
+    <div class="grid" id="sea"></div>
+  </section>
+
+  <section>
+    <h2>浜松城周辺<small>市役所・中心街</small></h2>
+    <div class="grid" id="home"></div>
+  </section>
+
+  <section>
+    <h2>河口付近の川<small>津波は川をさかのぼる</small></h2>
+    <div class="grid" id="river"></div>
+  </section>
+
+  <section>
+    <h2>国道1号<small>沿岸の道路状況</small></h2>
+    <div class="grid" id="road"></div>
+  </section>
+
+  <section>
+    <h2>公式情報</h2>
+    <div class="links">
+      <a href="https://www.jma.go.jp/bosai/map.html#contents=tsunami" target="_blank" rel="noopener">気象庁 津波警報・注意報<span>警報の種類と到達予想</span></a>
+      <a href="https://www.jma.go.jp/bosai/map.html#contents=earthquake_map" target="_blank" rel="noopener">気象庁 震度情報<span>地震の震源と各地の震度</span></a>
+      <a href="https://www.data.jma.go.jp/eqev/data/nteq/index.html" target="_blank" rel="noopener">南海トラフ地震に関連する情報<span>臨時情報（巨大地震注意・警戒）</span></a>
+      <a href="https://www.cam.shizuoka4.jp/" target="_blank" rel="noopener">静岡県 河川監視カメラ<span>県内の全カメラ</span></a>
+      <a href="https://www.river.go.jp/" target="_blank" rel="noopener">川の防災情報（国交省）<span>天竜川などの水位とカメラ</span></a>
+      <a href="https://www.cbr.mlit.go.jp/hamamatsu/live_view_road/pc/" target="_blank" rel="noopener">浜松河川国道事務所 道路カメラ<span>国道1号・三遠南信道</span></a>
+    </div>
+  </section>
+
+  <footer>
+    画像は各管理者の公開カメラから直接読み込んでいます（静岡県、国土交通省 浜松河川国道事務所、ZAZAマガジン、静岡朝日テレビ）。60秒ごとに自動で再読み込みします。カメラ側の更新間隔は約1〜2分です。
+  </footer>
+</div>
+
+<script>
+const PREF = "https://www.cam.shizuoka4.jp";
+const MLIT = "https://www.cbr.mlit.go.jp/hamamatsu/live_view_road/pc";
+
+const CAMS = {
+  sea: [
+    { name: "馬込川河口", desc: "中田島砂丘の前の浜と遠州灘を正面から", img: `${PREF}/cam/1028_00.jpg`, link: `${PREF}/cam.html?camtype=1028`, src: "静岡県" },
+    { name: "舞阪漁港・浜名大橋", desc: "浜名湖の湖口（今切口）方面。24時間ライブ映像", youtube: "sofT3B4sn2E", link: "https://www.youtube.com/watch?v=sofT3B4sn2E", src: "ZAZAマガジン（YouTube）" },
+    { name: "浜名大橋東", desc: "浜名バイパス舞阪付近。左手に海と湖口", img: `${MLIT}/img/PCR0101L.jpg`, link: `${MLIT}/Road-cam-window.html?PCR0101&n=0`, src: "国交省" },
+    { name: "道の駅潮見坂", desc: "湖西市白須賀。遠州灘を見下ろす高台", img: `${MLIT}/img/PCR0111L.jpg`, link: `${MLIT}/Road-cam-window.html?PCR0111&n=0`, src: "国交省" },
+  ],
+  home: [
+    { name: "静岡朝日テレビ 情報カメラ", desc: "元城町のホテルコンコルド浜松（浜松城・市役所のそば）など、県内のカメラを切り替えて24時間配信", youtube: "52hB_eOFukI", link: "https://www.youtube.com/watch?v=52hB_eOFukI", src: "静岡朝日テレビ（YouTube）" },
+    { name: "鍛冶町通り", desc: "ザザシティ浜松から。中心街の人と車の様子", youtube: "rPNHFcaZSp8", link: "https://www.youtube.com/watch?v=rPNHFcaZSp8", src: "ZAZAマガジン（YouTube）" },
+    { name: "松木橋", desc: "馬込川。浜松城から南東へ約1.7km", img: `${PREF}/cam/1029_00.jpg`, link: `${PREF}/cam.html?camtype=1029`, src: "静岡県" },
+  ],
+  river: [
+    { name: "鮫島橋", desc: "磐田市竜洋（天竜川の東、海の近く）", img: `${PREF}/cam/2013_00.jpg`, link: `${PREF}/cam.html?camtype=2013`, src: "静岡県" },
+    { name: "福田", desc: "磐田市福田（太田川の下流）", img: `${PREF}/cam/2130_00.jpg`, link: `${PREF}/cam.html?camtype=2130`, src: "静岡県" },
+    { name: "宇布見橋", desc: "浜松市中央区雄踏町（浜名湖の近く）", img: `${PREF}/cam/2083_00.jpg`, link: `${PREF}/cam.html?camtype=2083`, src: "静岡県" },
+    { name: "堀留川", desc: "浜松市中央区入野町（佐鳴湖の近く）", img: `${PREF}/cam/2082_00.jpg`, link: `${PREF}/cam.html?camtype=2082`, src: "静岡県" },
+    { name: "昭和水門", desc: "袋井市中新田（浅羽の沿岸部）", img: `${PREF}/cam/2054_00.jpg`, link: `${PREF}/cam.html?camtype=2054`, src: "静岡県" },
+    { name: "雨垂橋", desc: "御前崎市佐倉", img: `${PREF}/cam/2055_00.jpg`, link: `${PREF}/cam.html?camtype=2055`, src: "静岡県" },
+  ],
+  road: [
+    { name: "国道1号 馬込川", desc: "浜松バイパス 中田島町", img: `${MLIT}/img/PCR0094L.jpg`, link: `${MLIT}/Road-cam-window.html?PCR0094&n=0`, src: "国交省" },
+    { name: "国道1号 天竜川橋西", desc: "浜松市中央区中野町", img: `${MLIT}/img/PCR0086L.jpg`, link: `${MLIT}/Road-cam-window.html?PCR0086&n=0`, src: "国交省" },
+  ],
+};
+
+function card(c) {
+  const el = document.createElement("article");
+  el.className = "cam";
+  const view = c.youtube
+    ? `<div class="view wide"><iframe src="https://www.youtube.com/embed/${c.youtube}?mute=1&playsinline=1" title="${c.name}" allow="autoplay; encrypted-media; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen loading="lazy"></iframe></div>`
+    : `<a class="view" href="${c.link}" target="_blank" rel="noopener"><img alt="${c.name}のカメラ画像" data-src="${c.img}"><div class="err" hidden>画像を読み込めません<br>カメラの停止中か、通信できない状態です</div></a>`;
+  el.innerHTML = `${view}
+    <div class="meta">
+      <div class="name">${c.name}</div>
+      <div class="desc">${c.desc}</div>
+      <div class="src"><span>${c.src}</span><a href="${c.link}" target="_blank" rel="noopener">元のページ</a></div>
+    </div>`;
+  const img = el.querySelector("img");
+  if (img) {
+    const err = el.querySelector(".err");
+    img.addEventListener("load", () => { err.hidden = true; img.style.opacity = 1; });
+    img.addEventListener("error", () => { err.hidden = false; img.style.opacity = 0; });
+  }
+  return el;
+}
+
+for (const [key, list] of Object.entries(CAMS)) {
+  const box = document.getElementById(key);
+  list.forEach(c => box.appendChild(card(c)));
+}
+
+function refresh() {
+  const t = Date.now();
+  document.querySelectorAll("img[data-src]").forEach(img => {
+    img.src = `${img.dataset.src}?t=${t}`;
+  });
+  const d = new Date();
+  document.getElementById("updated").textContent =
+    `最終更新 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+
+document.getElementById("reload").addEventListener("click", refresh);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+</script>
+</body>
+</html>
