@@ -105,6 +105,25 @@ footer { color: var(--muted); font-size: 12px; }
 .eqm.latest { box-shadow: 0 0 0 3px var(--fg); }
 .eqm.far { background: #8ea3ad; }
 .homem { width: 10px; height: 10px; border-radius: 50%; background: var(--sea); box-shadow: 0 0 0 3px rgb(79 179 200 / .35); }
+.box.wide { grid-column: 1 / -1; }
+.trend { display: grid; gap: 4px; }
+.trend .th { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.trend .th b { font-size: 13px; font-weight: 600; }
+.trend .th .val { font: 500 18px/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
+.trend .th .val small { font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 400; }
+.trend svg { width: 100%; display: block; overflow: visible; touch-action: pan-y; }
+.trend .grid { stroke: var(--line); stroke-width: 1; }
+.trend .tick { fill: var(--muted); font: 10px var(--font-data); }
+.trend .obs { fill: none; stroke: var(--sea); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.trend .fc { fill: none; stroke: var(--sea); stroke-width: 2; stroke-dasharray: 4 4; stroke-linecap: round; opacity: .75; }
+.trend .wash { fill: var(--sea); opacity: .1; }
+.trend .now { stroke: var(--fg); stroke-width: 1; opacity: .6; }
+.trend .nowlbl { fill: var(--fg); font: 10px var(--font-body); }
+.trend .xhair { stroke: var(--fg); stroke-width: 1; opacity: .5; }
+.trend .dot { fill: var(--sea); stroke: var(--panel); stroke-width: 2; }
+.trend .warn { color: var(--alert); }
+.key { display: flex; gap: 14px; flex-wrap: wrap; font: 11px/1.4 var(--font-data); color: var(--muted); }
+.key svg { width: 22px; height: 6px; vertical-align: middle; margin-right: 4px; overflow: visible; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px/1.4 var(--font-data); color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 @media (prefers-reduced-motion: no-preference) { .cam img { transition: opacity .3s; } }
@@ -135,6 +154,17 @@ footer { color: var(--muted); font-size: 12px; }
         <div class="days" id="wx-days"></div>
         <details id="wx-overview" hidden><summary>静岡地方気象台の解説</summary><p></p></details>
         <a class="note" href="https://www.jma.go.jp/bosai/forecast/#area_type=class10s&area_code=220040" target="_blank" rel="noopener">気象庁の天気予報を開く</a>
+      </div>
+      <div class="box wide">
+        <h3>浜松の気温・湿度・気圧<span id="tr-time">読み込み中…</span></h3>
+        <div class="key">
+          <span><svg viewBox="0 0 22 6" aria-hidden="true"><line x1="1" y1="3" x2="21" y2="3" class="obs" style="fill:none;stroke:var(--sea);stroke-width:2"/></svg>これまで24時間（アメダス浜松の実測）</span>
+          <span><svg viewBox="0 0 22 6" aria-hidden="true"><line x1="1" y1="3" x2="21" y2="3" style="fill:none;stroke:var(--sea);stroke-width:2;stroke-dasharray:4 4;opacity:.75"/></svg>これから48時間（予報）</span>
+        </div>
+        <div class="trend" id="tr-temp"></div>
+        <div class="trend" id="tr-hum"></div>
+        <div class="trend" id="tr-pres"></div>
+        <div class="note">グラフをなぞると、3つとも同じ時刻の値を表示します。気圧は海面気圧。急に下がるときは天気の崩れや頭痛に注意。予報: Open-Meteo</div>
       </div>
       <div class="box">
         <h3>最近の地震<span id="eq-time">読み込み中…</span></h3>
@@ -491,7 +521,159 @@ function drawQuakes(list) {
   if (pts.length > 1) eqMap.fitBounds(pts, { padding: [24, 24], maxZoom: 7 });
 }
 
-function loadJMA() { loadWeather(); loadQuakes(); }
+// ---- 気温・湿度・気圧のグラフ ----
+const AMEDAS = "50456"; // アメダス浜松
+const OM = "https://api.open-meteo.com/v1/forecast?latitude=34.708&longitude=137.718&hourly=temperature_2m,relative_humidity_2m,pressure_msl&timezone=Asia%2FTokyo&forecast_days=3";
+async function getCached(url, key) {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), data })); } catch {}
+    return data;
+  } catch {
+    try { return JSON.parse(localStorage.getItem(key)).data; } catch { return null; }
+  }
+}
+const SERIES = [
+  { id: "tr-temp", name: "気温", unit: "℃", obs: "temp", fc: "temperature_2m", dec: 1, pad: 1.5 },
+  { id: "tr-hum", name: "湿度", unit: "%", obs: "humidity", fc: "relative_humidity_2m", dec: 0, pad: 5, min: 0, max: 100 },
+  { id: "tr-pres", name: "気圧", unit: "hPa", obs: "normalPressure", fc: "pressure_msl", dec: 1, pad: 2 },
+];
+let trend = null; // { t0, t1, now, obs: {key: [[t, v]]}, fc: {...} }
+let hoverT = null;
+
+async function loadTrend() {
+  let latest;
+  try { latest = new Date((await (await fetch(`${JMA}/amedas/data/latest_time.txt`, { cache: "no-store" })).text()).trim()); } catch { latest = new Date(); }
+  // アメダスは3時間ごとのファイル。24時間分 = 今のファイル＋8つ前まで
+  const blocks = [];
+  for (let i = 0; i <= 8; i++) {
+    const d = new Date(latest.getTime() - i * 3 * 3600000);
+    const h = Math.floor(d.getHours() / 3) * 3;
+    blocks.push(`${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(h)}`);
+  }
+  const [files, om] = await Promise.all([
+    Promise.all(blocks.map((b) => getCached(`${JMA}/amedas/data/point/${AMEDAS}/${b}.json`, `amedas:${b}`))),
+    getCached(OM, "openmeteo"),
+  ]);
+  const now = latest.getTime();
+  const t0 = now - 24 * 3600000, t1 = now + 48 * 3600000;
+  const obs = {}, fc = {};
+  SERIES.forEach((sr) => { obs[sr.obs] = []; fc[sr.fc] = []; });
+  files.filter(Boolean).forEach((f) => {
+    for (const [k, v] of Object.entries(f)) {
+      const t = new Date(`${k.slice(0, 4)}-${k.slice(4, 6)}-${k.slice(6, 8)}T${k.slice(8, 10)}:${k.slice(10, 12)}:00+09:00`).getTime();
+      if (t < t0 || t > now) continue;
+      SERIES.forEach((sr) => { const x = v[sr.obs]; if (x && x[0] != null && x[1] === 0) obs[sr.obs].push([t, x[0]]); });
+    }
+  });
+  Object.values(obs).forEach((a) => a.sort((x, y) => x[0] - y[0]));
+  if (om && om.hourly) {
+    om.hourly.time.forEach((iso, i) => {
+      const t = new Date(`${iso}:00+09:00`).getTime();
+      if (t < now - 3600000 || t > t1) return;
+      SERIES.forEach((sr) => { const v = om.hourly[sr.fc][i]; if (v != null) fc[sr.fc].push([t, v]); });
+    });
+  }
+  // 予報線を実測の最後の点からつなぐ
+  SERIES.forEach((sr) => { const last = obs[sr.obs].at(-1); if (last) fc[sr.fc] = [last, ...fc[sr.fc].filter(([t]) => t > last[0])]; });
+  trend = { t0, t1, now, obs, fc };
+  $("tr-time").textContent = `${hm(latest)} 観測まで`;
+  drawTrend();
+}
+
+function valueAt(arr, t) {
+  if (!arr.length || t < arr[0][0] || t > arr.at(-1)[0]) return null;
+  let best = arr[0];
+  for (const p of arr) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+  return best;
+}
+
+function drawTrend() {
+  if (!trend) return;
+  const NS = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  const { t0, t1, now, obs, fc } = trend;
+  SERIES.forEach((sr, si) => {
+    const box = $(sr.id);
+    const W = Math.max(280, box.clientWidth || 600), H = 96, L = 34, R = 6, T = 6, B = si === SERIES.length - 1 ? 20 : 8;
+    const o = obs[sr.obs], f = fc[sr.fc];
+    const all = [...o, ...f].map((p) => p[1]);
+    box.replaceChildren();
+    const head = el("div", "th");
+    const valEl = el("span", "val");
+    head.append(el("b", null, sr.name), valEl);
+    box.append(head);
+    if (!all.length) { valEl.textContent = "取得できません"; return; }
+    let lo = Math.min(...all) - sr.pad, hi = Math.max(...all) + sr.pad;
+    if (sr.min != null) lo = Math.max(sr.min, lo);
+    if (sr.max != null) hi = Math.min(sr.max, hi);
+    const step = [1, 2, 5, 10, 20, 25, 50].find((st) => (hi - lo) / st <= 4) || 50;
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const x = (t) => L + (t - t0) / (t1 - t0) * (W - L - R);
+    const y = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
+    const svg = mk("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": `${sr.name}の推移` });
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      svg.append(mk("line", { class: "grid", x1: L, x2: W - R, y1: y(v), y2: y(v) }));
+      svg.append(mk("text", { class: "tick", x: L - 4, y: y(v) + 3, "text-anchor": "end" }, String(v)));
+    }
+    // 0時の区切りと、最後のグラフだけ時刻の目盛り
+    const d0 = new Date(t0); d0.setMinutes(0, 0, 0); d0.setHours(Math.ceil(d0.getHours() / 6) * 6);
+    for (let t = d0.getTime(); t <= t1; t += 6 * 3600000) {
+      const d = new Date(t);
+      if (d.getHours() === 0) svg.append(mk("line", { class: "grid", x1: x(t), x2: x(t), y1: T, y2: H - B }));
+      if (B > 10) svg.append(mk("text", { class: "tick", x: x(t), y: H - 6, "text-anchor": "middle" }, d.getHours() === 0 ? `${d.getMonth() + 1}/${d.getDate()}` : `${d.getHours()}時`));
+    }
+    const path = (arr) => arr.map((p, i) => `${i ? "L" : "M"}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+    if (o.length > 1) {
+      svg.append(mk("path", { class: "wash", d: `${path(o)}L${x(o.at(-1)[0])},${H - B}L${x(o[0][0])},${H - B}Z` }));
+      svg.append(mk("path", { class: "obs", d: path(o) }));
+    }
+    if (f.length > 1) svg.append(mk("path", { class: "fc", d: path(f) }));
+    svg.append(mk("line", { class: "now", x1: x(now), x2: x(now), y1: T, y2: H - B }));
+    if (si === 0) svg.append(mk("text", { class: "nowlbl", x: x(now) + 4, y: T + 9 }, "いま"));
+    const xh = mk("line", { class: "xhair", x1: 0, x2: 0, y1: T, y2: H - B, visibility: "hidden" });
+    const dot = mk("circle", { class: "dot", r: 4, visibility: "hidden" });
+    svg.append(xh, dot);
+    box.append(svg);
+
+    const fmt = (v) => `${v.toFixed(sr.dec)}${sr.unit}`;
+    const restVal = () => {
+      const last = o.at(-1);
+      valEl.replaceChildren(last ? fmt(last[1]) : "--");
+      if (sr.obs === "normalPressure" && last) {
+        const before = valueAt(o, last[0] - 3 * 3600000);
+        if (before) {
+          const dlt = last[1] - before[1];
+          const sm = el("small", Math.abs(dlt) >= 2 ? "warn" : "", `3時間で ${dlt >= 0 ? "+" : ""}${dlt.toFixed(1)}hPa`);
+          valEl.append(sm);
+        }
+      } else if (last) valEl.append(el("small", null, "いま"));
+    };
+    sr.show = (t) => {
+      if (t == null) { xh.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); restVal(); return; }
+      const p = valueAt(t <= now ? o : f, t) || valueAt(o, t) || valueAt(f, t);
+      xh.setAttribute("x1", x(t)); xh.setAttribute("x2", x(t)); xh.setAttribute("visibility", "visible");
+      if (!p) { dot.setAttribute("visibility", "hidden"); valEl.textContent = "--"; return; }
+      dot.setAttribute("cx", x(p[0])); dot.setAttribute("cy", y(p[1])); dot.setAttribute("visibility", "visible");
+      const d = new Date(p[0]);
+      valEl.replaceChildren(fmt(p[1]), el("small", null, `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}${p[0] > now ? " 予報" : ""}`));
+    };
+    const toT = (e) => {
+      const r = svg.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width * W;
+      return Math.min(t1, Math.max(t0, t0 + (px - L) / (W - L - R) * (t1 - t0)));
+    };
+    svg.addEventListener("pointermove", (e) => { hoverT = toT(e); SERIES.forEach((s2) => s2.show && s2.show(hoverT)); });
+    svg.addEventListener("pointerleave", () => { hoverT = null; SERIES.forEach((s2) => s2.show && s2.show(null)); });
+    sr.show(hoverT);
+  });
+}
+let trResize = 0;
+window.addEventListener("resize", () => { clearTimeout(trResize); trResize = setTimeout(drawTrend, 150); });
+
+function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); }
 let lastJMA = 0;
 
 document.getElementById("reload").addEventListener("click", () => { refresh(); loadJMA(); lastJMA = Date.now(); });
