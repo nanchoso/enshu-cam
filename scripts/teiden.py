@@ -46,7 +46,7 @@ NAMES = {
 
 
 def fetch(url: str) -> ET.Element:
-    req = urllib.request.Request(url, headers={"User-Agent": "enshu-cam teiden (personal)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", "Accept-Language": "ja"})
     with urllib.request.urlopen(req, timeout=30) as res:
         return ET.fromstring(res.read())
 
