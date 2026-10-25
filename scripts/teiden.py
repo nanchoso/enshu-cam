@@ -69,4 +69,8 @@ def main(out: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    try:
+        main(sys.argv[1])
+    except Exception as e:  # show the reason as a GitHub annotation (readable without signing in)
+        print(f"::error::teiden fetch failed: {type(e).__name__}: {e}")
+        sys.exit(1)
