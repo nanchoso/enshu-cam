@@ -71,6 +71,25 @@ h2 small { color: var(--muted); letter-spacing: 0; font-weight: 400; margin-left
 .links a span { display: block; color: var(--muted); font-size: 12px; }
 .jump a { color: var(--sea); font-size: 14px; }
 footer { color: var(--muted); font-size: 12px; }
+.now { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.box h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.box h3 span, .box .note { font: 11px/1.4 var(--font-data); color: var(--muted); font-weight: 400; }
+.days { display: grid; gap: 8px; }
+.day { display: grid; grid-template-columns: 4.5em 1fr; gap: 2px 10px; }
+.day b { font-size: 13px; }
+.day .w { font-size: 14px; }
+.day .sub { grid-column: 2; font: 12px/1.5 var(--font-data); color: var(--muted); }
+.box details { font-size: 13px; color: var(--muted); }
+.box details p { white-space: pre-line; margin: 6px 0 0; }
+.quakes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.quakes li { display: grid; grid-template-columns: 3.6em 1fr; gap: 0 10px; font-size: 13px; }
+.quakes .si { font-weight: 700; text-align: center; border-radius: 6px; padding: 2px 0; background: var(--line); align-self: start; }
+.quakes .si.s4 { background: #7a5a12; } .quakes .si.s5 { background: var(--alert-bg); color: var(--alert); border: 1px solid var(--alert); }
+.quakes .meta2 { font: 11px/1.5 var(--font-data); color: var(--muted); }
+.quakes .near { color: var(--sea); }
+.quakes li.info { grid-template-columns: 1fr; color: var(--muted); }
+.quakes li.info.hot { color: var(--alert); font-weight: 600; }
 @media (prefers-reduced-motion: no-preference) { .cam img { transition: opacity .3s; } }
 </style>
 </head>
@@ -90,6 +109,23 @@ footer { color: var(--muted); font-size: 12px; }
   </div>
 
   <nav class="jump"><a href="checklist.html">今やること →</a>　<a href="report.html">家族の現場メモ →</a>　<a href="#info">災害時の公式情報へ ↓</a></nav>
+
+  <section>
+    <h2>いまの状況<small>気象庁の発表から自動で表示</small></h2>
+    <div class="now">
+      <div class="box">
+        <h3>静岡県西部の天気<span id="wx-time">読み込み中…</span></h3>
+        <div class="days" id="wx-days"></div>
+        <details id="wx-overview" hidden><summary>静岡地方気象台の解説</summary><p></p></details>
+        <a class="note" href="https://www.jma.go.jp/bosai/forecast/#area_type=class10s&area_code=220040" target="_blank" rel="noopener">気象庁の天気予報を開く</a>
+      </div>
+      <div class="box">
+        <h3>最近の地震<span id="eq-time">読み込み中…</span></h3>
+        <ul class="quakes" id="eq-list"></ul>
+        <div class="note">震度は全国の最大。静岡県で揺れたものは県内の最大震度も表示。距離は浜松駅から震源まで。</div>
+      </div>
+    </div>
+  </section>
 
   <section>
     <h2>海<small>遠州灘・浜名湖の湖口</small></h2>
@@ -163,7 +199,7 @@ footer { color: var(--muted); font-size: 12px; }
   </section>
 
   <footer>
-    画像は各管理者の公開カメラから直接読み込んでいます（静岡県、国土交通省 浜松河川国道事務所、ZAZAマガジン、静岡朝日テレビ）。60秒ごとに自動で再読み込みします。カメラ側の更新間隔は約1〜2分で、撮影時刻は画像の中に表示されます。リンク先の情報も、更新時刻と出どころ（公式か利用者の投稿か）を確かめてから使ってください。
+    画像は各管理者の公開カメラから直接読み込んでいます（静岡県、国土交通省 浜松河川国道事務所、ZAZAマガジン、静岡朝日テレビ）。60秒ごとに自動で再読み込みします。天気と地震は気象庁の発表を5分ごとに読み込み、電波がないときは最後に取れた内容を表示します。カメラ側の更新間隔は約1〜2分で、撮影時刻は画像の中に表示されます。リンク先の情報も、更新時刻と出どころ（公式か利用者の投稿か）を確かめてから使ってください。
   </footer>
 </div>
 
@@ -233,10 +269,152 @@ function refresh() {
     `最終更新 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
 }
 
-document.getElementById("reload").addEventListener("click", refresh);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+// 気象庁の発表（CORS で直接読める）。電波がないときは最後に取れた内容を出す
+const JMA = "https://www.jma.go.jp/bosai";
+const HAMAMATSU = [34.7036, 137.7353]; // 浜松駅
+const WEST = "220040";   // 静岡県西部
+const TEMP_PT = "50456"; // 浜松の気温観測点
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, "0");
+const hm = (d) => `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const clean = (s) => (s || "").replace(/　/g, " ").trim();
+
+async function getJSON(path) {
+  const key = `jma:${path}`;
+  try {
+    const res = await fetch(`${JMA}/${path}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), data })); } catch {}
+    return { data, stale: null };
+  } catch {
+    try {
+      const hit = JSON.parse(localStorage.getItem(key));
+      if (hit) return { data: hit.data, stale: new Date(hit.at) };
+    } catch {}
+    return null;
+  }
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+async function loadWeather() {
+  const [fc, ov] = await Promise.all([
+    getJSON("forecast/data/forecast/220000.json"),
+    getJSON("forecast/data/overview_forecast/220000.json"),
+  ]);
+  const box = $("wx-days");
+  if (!fc) { $("wx-time").textContent = "取得できません"; return; }
+  const r = fc.data[0];
+  const [tsW, tsP, tsT] = r.timeSeries;
+  const w = tsW.areas.find((a) => a.area.code === WEST);
+  const p = tsP.areas.find((a) => a.area.code === WEST);
+  const t = tsT.areas.find((a) => a.area.code === TEMP_PT);
+  const today = new Date(r.reportDatetime).toDateString();
+  const names = ["今日", "明日", "明後日"];
+  box.replaceChildren();
+  tsW.timeDefines.forEach((iso, i) => {
+    const d = new Date(iso);
+    const ds = d.toDateString();
+    const pops = tsP.timeDefines.map((x, j) => [new Date(x), p?.pops[j]]).filter(([x]) => x.toDateString() === ds);
+    const temps = tsT.timeDefines.map((x, j) => [new Date(x), t?.temps[j]]).filter(([x]) => x.toDateString() === ds);
+    // 今日は 09時の値だけが最高。ほかの日は 00時 = 最低、09時 = 最高
+    const max = temps.find(([x]) => x.getHours() === 9)?.[1];
+    const min = ds === today ? null : temps.find(([x]) => x.getHours() === 0)?.[1];
+    const sub = [];
+    if (min || max) sub.push(`気温 ${min ? min + "℃ / " : ""}${max ? max + "℃" : "--"}`);
+    if (pops.length) sub.push(`降水 ${pops.map(([x, v]) => `${pad(x.getHours())}時 ${v}%`).join(" ")}`);
+    if (w.waves?.[i]) sub.push(`波 ${clean(w.waves[i])}`);
+    const row = el("div", "day");
+    row.append(el("b", null, `${names[i] || ""} ${d.getMonth() + 1}/${d.getDate()}`), el("span", "w", clean(w.weathers[i])), el("span", "sub", sub.join("　")));
+    box.append(row);
+  });
+  $("wx-time").textContent = (fc.stale ? `保存分 ${hm(fc.stale)} 取得・` : "") + `${hm(new Date(r.reportDatetime))} 発表`;
+  if (ov?.data?.text) {
+    $("wx-overview").hidden = false;
+    $("wx-overview").querySelector("p").textContent = clean(ov.data.headlineText ? ov.data.headlineText + "\n\n" + ov.data.text : ov.data.text);
+  }
+}
+
+const SHINDO = { "5-": "5弱", "5+": "5強", "6-": "6弱", "6+": "6強" };
+const rank = (m) => ["1", "2", "3", "4", "5-", "5+", "6-", "6+", "7"].indexOf(m);
+
+function distKm([la1, lo1], [la2, lo2]) {
+  const r = Math.PI / 180;
+  const a = Math.sin((la2 - la1) * r / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin((lo2 - lo1) * r / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(a));
+}
+
+async function loadQuakes() {
+  const got = await getJSON("quake/data/list.json");
+  const list = $("eq-list");
+  if (!got) { $("eq-time").textContent = "取得できません"; return; }
+  // 同じ地震の速報・震源・震度の発表を1件にまとめる（一覧は新しい順）
+  const byId = new Map();
+  const notices = [];
+  for (const x of got.data) {
+    if (x.ttl.startsWith("南海トラフ")) { notices.push(x); continue; }
+    const q = byId.get(x.eid) || byId.set(x.eid, { at: x.at, anm: "", mag: "", cod: "", maxi: "", shizuoka: "", far: false }).get(x.eid);
+    q.anm ||= x.anm; q.mag ||= x.mag; q.cod ||= x.cod;
+    if (x.ttl.startsWith("遠地")) q.far = true;
+    if (rank(x.maxi) > rank(q.maxi)) q.maxi = x.maxi;
+    const sz = (x.int || []).find((i) => i.code === "22");
+    if (sz && rank(sz.maxi) > rank(q.shizuoka)) q.shizuoka = sz.maxi;
+  }
+  list.replaceChildren();
+  const nankai = notices[0];
+  if (nankai) {
+    const hot = nankai.ttl.includes("臨時");
+    const li = el("li", hot ? "info hot" : "info");
+    const a = el("a", null, `${nankai.ttl}（${hm(new Date(nankai.at))}）`);
+    a.href = "https://www.data.jma.go.jp/eqev/data/nteq/index.html"; a.target = "_blank"; a.rel = "noopener";
+    a.style.color = "inherit";
+    li.append(a);
+    if (!hot) li.append(el("span", "meta2", " 定例の評価も含む"));
+    list.append(li);
+  }
+  [...byId.values()].filter((q) => q.anm && (q.maxi || q.far)).slice(0, 8).forEach((q) => {
+    const li = el("li");
+    const s = q.maxi ? SHINDO[q.maxi] || q.maxi : "遠地";
+    const r = rank(q.maxi);
+    li.append(el("span", `si${r >= 4 ? " s5" : r === 3 ? " s4" : ""}`, s));
+    const body = el("div");
+    body.append(el("div", null, `${q.anm}${q.mag ? "  M" + q.mag : ""}`));
+    const meta = [hm(new Date(q.at))];
+    const m = q.cod.match(/^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)(?:([+-]\d+))?/);
+    if (m) {
+      const km = Math.round(distKm(HAMAMATSU, [+m[1], +m[2]]));
+      meta.push(`浜松から約${km.toLocaleString()}km`);
+      if (m[3]) meta.push(+m[3] === 0 ? "ごく浅い" : `深さ${Math.abs(+m[3]) / 1000}km`);
+    }
+    const line = el("div", "meta2", meta.join(" ・ "));
+    if (q.shizuoka) line.append(el("span", "near", ` ・ 静岡県で震度${SHINDO[q.shizuoka] || q.shizuoka}`));
+    body.append(line);
+    li.append(body);
+    list.append(li);
+  });
+  const latest = got.data[0];
+  $("eq-time").textContent = (got.stale ? `保存分 ${hm(got.stale)} 取得・` : "") + (latest ? `${hm(new Date(latest.rdt))} まで` : "");
+}
+
+function loadJMA() { loadWeather(); loadQuakes(); }
+let lastJMA = 0;
+
+document.getElementById("reload").addEventListener("click", () => { refresh(); loadJMA(); lastJMA = Date.now(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  refresh();
+  if (Date.now() - lastJMA > 5 * 60000) { loadJMA(); lastJMA = Date.now(); }
+});
 refresh();
+loadJMA(); lastJMA = Date.now();
 setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+setInterval(() => { if (!document.hidden) { loadJMA(); lastJMA = Date.now(); } }, 5 * 60000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
