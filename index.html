@@ -191,6 +191,18 @@ footer { color: var(--muted); font-size: 12px; }
 .trend .th .val small.warn { color: var(--alert); font-weight: 600; }
 .key { display: flex; gap: 14px; flex-wrap: wrap; font: 11px/1.4 var(--font-data); color: var(--muted); }
 .key svg { width: 22px; height: 6px; vertical-align: middle; margin-right: 4px; overflow: visible; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { flex: 1; border: 0; border-radius: 0; background: var(--bg); padding: 6px 4px; font-size: 13px; border-left: 1px solid var(--line); }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--sea); color: #06222a; font-weight: 600; }
+#rd-map { height: 320px; border-radius: 8px; border: 1px solid var(--line); background: #0a0f12; }
+#rd-map .base-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+.player { display: flex; align-items: center; gap: 10px; }
+.player button { width: 40px; flex: none; padding: 4px 0; }
+.player input { flex: 1; min-width: 0; accent-color: var(--sea); }
+.player span { font: 12px var(--font-data); min-width: 7.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.player span.fc { color: var(--warn); }
+.legend i.sq { border-radius: 2px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px/1.4 var(--font-data); color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 @media (prefers-reduced-motion: no-preference) { .cam img { transition: opacity .3s; } }
@@ -238,7 +250,10 @@ footer { color: var(--muted); font-size: 12px; }
         <div class="trend" id="tr-pres"></div>
         <div class="trend" id="tr-rain"></div>
         <div class="trend" id="tr-wind"></div>
-        <div class="note">グラフをなぞると、すべてのグラフに同じ時刻の値を表示します。降水量は1時間ごとの量（棒）。風は10分間の平均風速。気圧は海面気圧。急に下がるときは天気の崩れや頭痛に注意。予報: Open-Meteo</div>
+        <div class="sect">遠州灘（舞阪の南の沖）</div>
+        <div class="trend" id="tr-wave"></div>
+        <div class="trend" id="tr-tide"></div>
+        <div class="note">グラフをなぞると、すべてのグラフに同じ時刻の値を表示します。降水量は1時間ごとの量（棒）。風は10分間の平均風速。波と潮位は観測ではなく予報モデルの値（Open-Meteo Marine）で、潮位は平均海面からの高さ。気圧は海面気圧。急に下がるときは天気の崩れや頭痛に注意。予報: Open-Meteo</div>
       </div>
       <div class="box">
         <h3>最近の地震<span id="eq-time">読み込み中…</span></h3>
@@ -248,10 +263,22 @@ footer { color: var(--muted); font-size: 12px; }
         <ul class="quakes" id="eq-list"></ul>
         <div class="note">地図の丸は震源で、数字は全国の最大震度。枠の白い丸がいちばん新しい地震。一覧を押すと地図がその震源へ移ります。静岡県で揺れたものは県内の最大震度も表示。距離は浜松駅から震源まで。</div>
       </div>
-      <div class="box teiden" id="teiden">
-        <h3>停電（中部電力パワーグリッド）</h3>
-        <a class="golink" href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener">停電情報を開く</a>
-        <div class="note">市区町村ごとの停電戸数と、復旧の見込みが見られます。停電中はスマホの電池を節約し、ラジオも使ってください。</div>
+      <div class="box" id="radar">
+        <h3>雨雲と危険度<span id="rd-time">読み込み中…</span></h3>
+        <div class="seg" role="group" aria-label="表示する地図">
+          <button type="button" data-layer="rain" aria-pressed="true">雨雲</button>
+          <button type="button" data-layer="inund" aria-pressed="false">浸水</button>
+          <button type="button" data-layer="flood_mesh" aria-pressed="false">洪水</button>
+          <button type="button" data-layer="land" aria-pressed="false">土砂</button>
+        </div>
+        <div id="rd-map" role="region" aria-label="浜松周辺の雨雲と危険度の地図"></div>
+        <div class="player" id="rd-player">
+          <button type="button" id="rd-play" aria-label="再生">▶</button>
+          <input type="range" id="rd-slider" min="0" max="24" value="12" aria-label="時刻">
+          <span id="rd-label">--:--</span>
+        </div>
+        <div class="legend" id="rd-legend"></div>
+        <div class="note" id="rd-note">雨雲は1時間前から1時間先まで（5分ごと）。右へ動かすほど先の予報です。</div>
       </div>
     </div>
   </section>
@@ -720,6 +747,7 @@ function drawQuakes(list) {
 
 // ---- 気温・湿度・気圧のグラフ ----
 const AMEDAS = "50456"; // アメダス浜松
+const MARINE = "https://marine-api.open-meteo.com/v1/marine?latitude=34.62&longitude=137.75&hourly=wave_height,wave_period,sea_level_height_msl&past_days=1&forecast_days=3&timezone=Asia%2FTokyo";
 const OM = "https://api.open-meteo.com/v1/forecast?latitude=34.708&longitude=137.718&hourly=temperature_2m,relative_humidity_2m,pressure_msl,precipitation,wind_speed_10m&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=3";
 async function getCached(url, key) {
   try {
@@ -738,6 +766,8 @@ const SERIES = [
   { id: "tr-pres", name: "気圧", unit: "hPa", obs: "normalPressure", fc: "pressure_msl", dec: 1, pad: 2 },
   { id: "tr-rain", name: "降水量", unit: "mm", obs: "precipitation1h", fc: "precipitation", dec: 1, pad: 0, min: 0, bar: true, hourly: true },
   { id: "tr-wind", name: "風速", unit: "m/s", obs: "wind", fc: "wind_speed_10m", dec: 1, pad: 1, min: 0 },
+  { id: "tr-wave", name: "波の高さ", unit: "m", obs: "_wave", fc: "wave_height", dec: 1, pad: 0.5, min: 0, marine: true },
+  { id: "tr-tide", name: "潮位", unit: "cm", obs: "_tide", fc: "sea_level_height_msl", dec: 0, pad: 10, marine: true, scale: 100 },
 ];
 let trend = null; // { t0, t1, now, obs: {key: [[t, v]]}, fc: {...} }
 let hoverT = null;
@@ -756,6 +786,7 @@ async function loadTrend() {
     Promise.all(blocks.map((b) => getCached(`${JMA}/amedas/data/point/${AMEDAS}/${b}.json`, `amedas:${b}`))),
     getCached(OM, "openmeteo"),
   ]);
+  const marine = await getCached(MARINE, "marine");
   const now = latest.getTime();
   const t0 = now - 24 * 3600000, t1 = now + 48 * 3600000;
   const obs = {}, fc = {};
@@ -777,7 +808,17 @@ async function loadTrend() {
     om.hourly.time.forEach((iso, i) => {
       const t = new Date(`${iso}:00+09:00`).getTime();
       if (t < now - 3600000 || t > t1) return;
-      SERIES.forEach((sr) => { const v = om.hourly[sr.fc][i]; if (v != null) fc[sr.fc].push([t, v]); });
+      SERIES.forEach((sr) => { if (sr.marine) return; const v = om.hourly[sr.fc][i]; if (v != null) fc[sr.fc].push([t, v]); });
+    });
+  }
+  // 波と潮位は観測がないので、昨日からの予報値（モデル）だけを点線で描く
+  const period = [];
+  if (marine && marine.hourly) {
+    marine.hourly.time.forEach((iso, i) => {
+      const t = new Date(`${iso}:00+09:00`).getTime();
+      if (t < t0 || t > t1) return;
+      SERIES.filter((sr) => sr.marine).forEach((sr) => { const v = marine.hourly[sr.fc][i]; if (v != null) fc[sr.fc].push([t, v * (sr.scale || 1)]); });
+      if (marine.hourly.wave_period[i] != null) period.push([t, marine.hourly.wave_period[i]]);
     });
   }
   // 予報線を実測の最後の点からつなぐ
@@ -786,7 +827,7 @@ async function loadTrend() {
     if (!last) return;
     fc[sr.fc] = sr.bar ? fc[sr.fc].filter(([t]) => t > last[0]) : [last, ...fc[sr.fc].filter(([t]) => t > last[0])];
   });
-  trend = { t0, t1, now, obs, fc, last: lastRec?.v || {} };
+  trend = { t0, t1, now, obs, fc, period, last: lastRec?.v || {} };
   $("tr-time").textContent = `${hm(latest)} 観測まで`;
   drawTrend();
 }
@@ -876,16 +917,27 @@ function drawTrend() {
         const DIR16 = ["静穏", "北北東", "北東", "東北東", "東", "東南東", "南東", "南南東", "南", "南南西", "南西", "西南西", "西", "西北西", "北西", "北北西", "北"];
         const dir = DIR16[trend.last.windDirection?.[0]] || "";
         valEl.append(el("small", g >= 15 ? "warn" : "", `${dir}の風${g != null ? `・今日の最大瞬間 ${g}m/s` : ""}`));
+      } else if (sr.marine) {
+        const p = valueAt(f, now);
+        valEl.replaceChildren(p ? fmt(p[1]) : "--");
+        if (sr.fc === "wave_height") {
+          const per = valueAt(trend.period, now);
+          valEl.append(el("small", p && p[1] >= 3 ? "warn" : "", `いま（予報）${per ? `・周期 ${per[1].toFixed(0)}秒` : ""}`));
+        } else {
+          const ahead = f.filter(([t]) => t > now);
+          const hiT = ahead.find((pt, k) => k > 0 && k < ahead.length - 1 && pt[1] >= ahead[k - 1][1] && pt[1] >= ahead[k + 1][1]);
+          valEl.append(el("small", null, `いま（予報）${hiT ? `・次の満潮 ${hm(new Date(hiT[0])).slice(-5)} ごろ` : ""}`));
+        }
       } else if (last) valEl.append(el("small", null, "いま"));
     };
     sr.show = (t) => {
       if (t == null) { xh.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); restVal(); return; }
-      const p = valueAt(t <= now ? o : f, t) || valueAt(o, t) || valueAt(f, t);
+      const p = sr.marine ? valueAt(f, t) : (valueAt(t <= now ? o : f, t) || valueAt(o, t) || valueAt(f, t));
       xh.setAttribute("x1", x(t)); xh.setAttribute("x2", x(t)); xh.setAttribute("visibility", "visible");
       if (!p) { dot.setAttribute("visibility", "hidden"); valEl.textContent = "--"; return; }
       dot.setAttribute("cx", x(p[0])); dot.setAttribute("cy", y(p[1])); dot.setAttribute("visibility", "visible");
       const d = new Date(p[0]);
-      valEl.replaceChildren(fmt(p[1]), el("small", null, `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}${p[0] > now ? " 予報" : ""}`));
+      valEl.replaceChildren(fmt(p[1]), el("small", null, `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}${p[0] > now || sr.marine ? " 予報" : ""}`));
     };
     const toT = (e) => {
       const r = svg.getBoundingClientRect();
@@ -961,7 +1013,85 @@ async function loadQuakeDetail(listData) {
   box.hidden = false;
 }
 
-function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); loadTsunami(); }
+// ---- 雨雲レーダー（ナウキャスト）とキキクル ----
+const TILE = `${JMA}/jmatile/data`;
+const RAIN_LEGEND = [["#a0d2ff", "1〜5"], ["#218cff", "5〜10"], ["#0041ff", "10〜20"], ["#faf500", "20〜30"], ["#ff9900", "30〜50"], ["#ff2800", "50〜80"], ["#b40068", "80〜 mm/h"]];
+const RISK_LEGEND = [["#f2e700", "注意（レベル2）"], ["#ff2800", "警戒（レベル3）"], ["#aa00aa", "危険（レベル4）"], ["#0c000c", "災害切迫（レベル5）"]];
+let rdMap = null, rdLayer = null, rdFrames = [], rdIndex = 0, rdTimer = null, rdKind = "rain", rdRisk = null;
+const tstr = (v) => new Date(`${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T${v.slice(8, 10)}:${v.slice(10, 12)}:00Z`);
+function rdLegend() {
+  const lg = $("rd-legend");
+  lg.replaceChildren();
+  (rdKind === "rain" ? RAIN_LEGEND : RISK_LEGEND).forEach(([c, t]) => {
+    const sp = el("span"); const i = el("i", "sq"); i.style.background = c; if (c === "#0c000c") i.style.outline = "1px solid var(--muted)";
+    sp.append(i, t); lg.append(sp);
+  });
+}
+function rdUrl() {
+  if (rdKind === "rain") {
+    const f = rdFrames[rdIndex];
+    return f ? `${TILE}/nowc/${f.basetime}/none/${f.validtime}/surf/hrpns/{z}/{x}/{y}.png` : null;
+  }
+  return rdRisk ? `${TILE}/risk/${rdRisk.basetime}/${rdRisk.member}/${rdRisk.validtime}/surf/${rdKind}/{z}/{x}/{y}.png` : null;
+}
+function rdShow() {
+  const url = rdUrl();
+  if (!url || !rdMap) return;
+  if (!rdLayer) rdLayer = L.tileLayer(url, { maxNativeZoom: 10, maxZoom: 13, opacity: 0.75, attribution: "雨雲・キキクル: 気象庁" }).addTo(rdMap);
+  else rdLayer.setUrl(url);
+  const isRain = rdKind === "rain";
+  $("rd-player").hidden = !isRain;
+  const lbl = $("rd-label");
+  if (isRain) {
+    const f = rdFrames[rdIndex];
+    const d = tstr(f.validtime);
+    const fc = f.fc;
+    lbl.textContent = `${hm(d).slice(-5)}${fc ? " 予報" : rdIndex === rdFrames.findLastIndex((x) => !x.fc) ? " 最新" : ""}`;
+    lbl.className = fc ? "fc" : "";
+    $("rd-note").textContent = "雨雲は1時間前から1時間先まで（5分ごと）。右へ動かすほど先の予報です。";
+  } else {
+    $("rd-note").textContent = { inund: "浸水キキクル: 短時間の強い雨による浸水の危険度。自宅の地域が赤（警戒）になったら実家へ移る判断を。", flood_mesh: "洪水キキクル: 中小河川があふれる危険度。", land: "土砂キキクル: がけ崩れ・土石流の危険度。" }[rdKind];
+  }
+}
+function rdStop() { clearInterval(rdTimer); rdTimer = null; $("rd-play").textContent = "▶"; $("rd-play").setAttribute("aria-label", "再生"); }
+async function loadRadar() {
+  if (!window.L) return;
+  if (!rdMap) {
+    rdMap = L.map("rd-map", { scrollWheelZoom: false }).setView([34.75, 137.73], 9);
+    L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", { maxZoom: 13, className: "base-dark", attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>' }).addTo(rdMap);
+    L.marker(HAMAMATSU, { icon: L.divIcon({ className: "", html: '<div class="homem"></div>', iconSize: [10, 10] }), interactive: false, keyboard: false }).addTo(rdMap);
+    document.querySelectorAll("#radar .seg button").forEach((b) => b.addEventListener("click", () => {
+      rdKind = b.dataset.layer;
+      document.querySelectorAll("#radar .seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      rdStop(); rdLegend(); rdShow();
+    }));
+    $("rd-slider").addEventListener("input", (e) => { rdStop(); rdIndex = +e.target.value; rdShow(); });
+    $("rd-play").addEventListener("click", () => {
+      if (rdTimer) { rdStop(); return; }
+      $("rd-play").textContent = "❚❚"; $("rd-play").setAttribute("aria-label", "停止");
+      rdTimer = setInterval(() => { rdIndex = (rdIndex + 1) % rdFrames.length; $("rd-slider").value = rdIndex; rdShow(); }, 700);
+    });
+    rdLegend();
+  }
+  const [n1, n2, risk] = await Promise.all([
+    getJSON("jmatile/data/nowc/targetTimes_N1.json"),
+    getJSON("jmatile/data/nowc/targetTimes_N2.json"),
+    getJSON("jmatile/data/risk/targetTimes.json"),
+  ]);
+  if (n1) {
+    const past = n1.data.slice(0, 13).reverse();
+    const fut = (n2?.data || []).slice().sort((a, b) => a.validtime.localeCompare(b.validtime)).map((f) => ({ ...f, fc: true }));
+    const wasLatest = !rdFrames.length || rdIndex === rdFrames.findLastIndex((x) => !x.fc);
+    rdFrames = [...past, ...fut];
+    $("rd-slider").max = String(rdFrames.length - 1);
+    if (wasLatest) { rdIndex = past.length - 1; $("rd-slider").value = rdIndex; }
+    $("rd-time").textContent = `${hm(tstr(past.at(-1).validtime))} 観測`;
+  } else $("rd-time").textContent = "取得できません";
+  if (risk) rdRisk = risk.data.find((x) => x.member === "immed0") || risk.data[0];
+  rdShow();
+}
+
+function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); loadTsunami(); loadRadar(); }
 let lastJMA = 0;
 
 document.getElementById("reload").addEventListener("click", () => { refresh(); loadJMA(); lastJMA = Date.now(); });
