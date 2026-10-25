@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#0d1418">
 <meta name="robots" content="noindex, nofollow">
 <title>遠州灘カメラ</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 /* Layout: 監視モニター。警告帯 → 海 → 河口 → 道路 → 公式情報。スマホ1列、広い画面で2〜3列 */
 :root {
@@ -90,6 +91,22 @@ footer { color: var(--muted); font-size: 12px; }
 .quakes .near { color: var(--sea); }
 .quakes li.info { grid-template-columns: 1fr; color: var(--muted); }
 .quakes li.info.hot { color: var(--alert); font-weight: 600; }
+.quakes li.q { cursor: pointer; border-radius: 6px; }
+.quakes li.q:hover, .quakes li.q.sel { background: var(--line); }
+#eq-map { height: 280px; border-radius: 8px; border: 1px solid var(--line); background: #0a0f12; }
+#eq-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+.leaflet-container { font: inherit; }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--fg); }
+.leaflet-popup-content { margin: 8px 10px; font-size: 13px; }
+.leaflet-control-attribution { background: rgb(13 20 24 / .8) !important; color: var(--muted) !important; font-size: 10px; }
+.leaflet-control-attribution a { color: var(--muted) !important; }
+.leaflet-bar a { background: var(--panel); color: var(--fg); border-bottom-color: var(--line); }
+.eqm { display: grid; place-items: center; border-radius: 50%; color: #111; font: 700 12px/1 var(--font-body); border: 2px solid rgb(0 0 0 / .55); box-shadow: 0 0 0 1px rgb(255 255 255 / .35); }
+.eqm.latest { box-shadow: 0 0 0 3px var(--fg); }
+.eqm.far { background: #8ea3ad; }
+.homem { width: 10px; height: 10px; border-radius: 50%; background: var(--sea); box-shadow: 0 0 0 3px rgb(79 179 200 / .35); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 11px/1.4 var(--font-data); color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
 @media (prefers-reduced-motion: no-preference) { .cam img { transition: opacity .3s; } }
 </style>
 </head>
@@ -121,8 +138,10 @@ footer { color: var(--muted); font-size: 12px; }
       </div>
       <div class="box">
         <h3>最近の地震<span id="eq-time">読み込み中…</span></h3>
+        <div id="eq-map" role="region" aria-label="最近の地震の震源と最大震度の地図"></div>
+        <div class="legend" id="eq-legend"></div>
         <ul class="quakes" id="eq-list"></ul>
-        <div class="note">震度は全国の最大。静岡県で揺れたものは県内の最大震度も表示。距離は浜松駅から震源まで。</div>
+        <div class="note">地図の丸は震源で、数字は全国の最大震度。枠の白い丸がいちばん新しい地震。一覧を押すと地図がその震源へ移ります。静岡県で揺れたものは県内の最大震度も表示。距離は浜松駅から震源まで。</div>
       </div>
     </div>
   </section>
@@ -203,6 +222,7 @@ footer { color: var(--muted); font-size: 12px; }
   </footer>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const PREF = "https://www.cam.shizuoka4.jp";
 const MLIT = "https://www.cbr.mlit.go.jp/hamamatsu/live_view_road/pc";
@@ -342,6 +362,37 @@ async function loadWeather() {
 }
 
 const SHINDO = { "5-": "5弱", "5+": "5強", "6-": "6弱", "6+": "6強" };
+// 震度の色（気象庁の震度分布図に近い並び）
+const SHINDO_COLOR = { "1": "#a9c6d6", "2": "#5aa9e6", "3": "#7fd18b", "4": "#f5e05a", "5-": "#f7a23b", "5+": "#ef6c2f", "6-": "#e2382f", "6+": "#a8212d", "7": "#8a2ab0" };
+
+let eqMap = null, eqLayer = null;
+const eqMarkers = new Map();
+function ensureMap() {
+  if (eqMap || !window.L) return eqMap;
+  eqMap = L.map("eq-map", { zoomControl: true, attributionControl: true, scrollWheelZoom: false }).setView(HAMAMATSU, 5);
+  L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", {
+    maxZoom: 12, minZoom: 3,
+    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a> ・ 震源: 気象庁',
+  }).addTo(eqMap);
+  L.marker(HAMAMATSU, { icon: L.divIcon({ className: "", html: '<div class="homem"></div>', iconSize: [10, 10] }), interactive: false, keyboard: false }).addTo(eqMap);
+  eqLayer = L.layerGroup().addTo(eqMap);
+  const lg = $("eq-legend");
+  ["1", "2", "3", "4", "5-", "5+", "6-", "6+", "7"].forEach((k) => {
+    const s = el("span");
+    const i = el("i"); i.style.background = SHINDO_COLOR[k];
+    s.append(i, `震度${SHINDO[k] || k}`);
+    lg.append(s);
+  });
+  const h = el("span"); const hi = el("i"); hi.style.background = "var(--sea)"; h.append(hi, "浜松"); lg.append(h);
+  return eqMap;
+}
+function selectQuake(id) {
+  const m = eqMarkers.get(id);
+  if (!m || !eqMap) return;
+  eqMap.setView(m.getLatLng(), Math.max(eqMap.getZoom(), 6));
+  m.openPopup();
+  document.querySelectorAll(".quakes li.q").forEach((li) => li.classList.toggle("sel", li.dataset.id === id));
+}
 const rank = (m) => ["1", "2", "3", "4", "5-", "5+", "6-", "6+", "7"].indexOf(m);
 
 function distKm([la1, lo1], [la2, lo2]) {
@@ -378,8 +429,13 @@ async function loadQuakes() {
     if (!hot) li.append(el("span", "meta2", " 定例の評価も含む"));
     list.append(li);
   }
-  [...byId.values()].filter((q) => q.anm && (q.maxi || q.far)).slice(0, 8).forEach((q) => {
-    const li = el("li");
+  const shown = [...byId.entries()].map(([id, q]) => ({ id, ...q })).filter((q) => q.anm && (q.maxi || q.far)).slice(0, 10);
+  shown.forEach((q, idx) => {
+    const li = el("li", "q");
+    li.dataset.id = q.id;
+    li.tabIndex = 0;
+    li.addEventListener("click", () => selectQuake(q.id));
+    li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectQuake(q.id); } });
     const s = q.maxi ? SHINDO[q.maxi] || q.maxi : "遠地";
     const r = rank(q.maxi);
     li.append(el("span", `si${r >= 4 ? " s5" : r === 3 ? " s4" : ""}`, s));
@@ -388,7 +444,9 @@ async function loadQuakes() {
     const meta = [hm(new Date(q.at))];
     const m = q.cod.match(/^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)(?:([+-]\d+))?/);
     if (m) {
+      q.lat = +m[1]; q.lng = +m[2];
       const km = Math.round(distKm(HAMAMATSU, [+m[1], +m[2]]));
+      q.km = km;
       meta.push(`浜松から約${km.toLocaleString()}km`);
       if (m[3]) meta.push(+m[3] === 0 ? "ごく浅い" : `深さ${Math.abs(+m[3]) / 1000}km`);
     }
@@ -397,9 +455,40 @@ async function loadQuakes() {
     body.append(line);
     li.append(body);
     list.append(li);
+    q.metaText = meta.join(" ・ ") + (q.shizuoka ? ` ・ 静岡県で震度${SHINDO[q.shizuoka] || q.shizuoka}` : "");
+    q.label = s; q.latest = idx === 0;
   });
+  drawQuakes(shown);
   const latest = got.data[0];
   $("eq-time").textContent = (got.stale ? `保存分 ${hm(got.stale)} 取得・` : "") + (latest ? `${hm(new Date(latest.rdt))} まで` : "");
+}
+
+function drawQuakes(list) {
+  if (!ensureMap()) { $("eq-map").hidden = true; return; }
+  eqLayer.clearLayers();
+  eqMarkers.clear();
+  const pts = [HAMAMATSU];
+  // 古い順に置いて、新しい地震を上に重ねる
+  [...list].reverse().forEach((q) => {
+    if (q.lat == null) return;
+    const r = Math.max(0, rank(q.maxi));
+    const size = q.far ? 18 : 18 + r * 3;
+    const style = q.far ? "" : `background:${SHINDO_COLOR[q.maxi] || "#a9c6d6"};`;
+    const icon = L.divIcon({
+      className: "",
+      html: `<div class="eqm${q.far ? " far" : ""}${q.latest ? " latest" : ""}" style="${style}width:${size}px;height:${size}px">${q.far ? "" : (SHINDO[q.maxi] || q.maxi).replace(/[弱強]/, (c) => c === "弱" ? "-" : "+")}</div>`,
+      iconSize: [size, size],
+    });
+    const mk = L.marker([q.lat, q.lng], { icon, zIndexOffset: q.latest ? 1000 : r * 10, title: q.anm }).addTo(eqLayer);
+    const pop = el("div");
+    pop.append(el("b", null, `${q.anm}${q.mag ? "  M" + q.mag : ""}`), el("br"), `最大震度 ${q.far ? "なし（遠地）" : SHINDO[q.maxi] || q.maxi}`, el("br"), q.metaText);
+    mk.bindPopup(pop);
+    mk.on("click", () => document.querySelectorAll(".quakes li.q").forEach((li) => li.classList.toggle("sel", li.dataset.id === q.id)));
+    eqMarkers.set(q.id, mk);
+    if (!q.far) pts.push([q.lat, q.lng]);
+  });
+  eqMap.invalidateSize();
+  if (pts.length > 1) eqMap.fitBounds(pts, { padding: [24, 24], maxZoom: 7 });
 }
 
 function loadJMA() { loadWeather(); loadQuakes(); }
