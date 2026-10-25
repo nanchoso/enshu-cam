@@ -974,7 +974,7 @@ async function loadTeiden() {
   try { const res = await fetch(`data/teiden.json?t=${Date.now()}`, { cache: "no-store" }); if (res.ok) d = await res.json(); } catch {}
   const box = $("teiden");
   if (!d) { $("td-time").textContent = "取得できません"; return; }
-  $("td-time").textContent = `${hm(new Date(d.fetchedAt))} 取得`;
+  $("td-time").textContent = `${hm(new Date(d.fetchedAt))} に更新（変化があれば15分以内）`;
   const has = d.areas.length > 0;
   box.classList.toggle("on", has);
   $("td-total").replaceChildren(d.shizuoka && has ? d.shizuoka : "停電なし", el("small", null, "静岡県（中部電力管内）"));
