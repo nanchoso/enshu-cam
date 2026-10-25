@@ -170,16 +170,7 @@ footer { color: var(--muted); font-size: 12px; }
 .eqlatest .rows { display: flex; flex-wrap: wrap; gap: 6px; }
 .eqlatest .si2 { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px 2px 3px; }
 .eqlatest .si2 i { font: 700 12px/1 var(--font-body); font-style: normal; color: #111; border-radius: 999px; padding: 4px 7px; }
-.teiden { display: grid; gap: 6px; }
-.teiden .big { font: 600 28px/1.1 var(--font-data); font-variant-numeric: tabular-nums; }
-.teiden .big small { font: 12px var(--font-body); color: var(--muted); margin-left: 6px; }
-.teiden.on .big { color: var(--warn); }
-.teiden ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.teiden li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-.teiden li.home { color: var(--warn); font-weight: 600; }
-.teiden.stale .big, .teiden.stale ul { opacity: .4; }
-.teiden .golink { display: none; text-align: center; padding: 10px; border-radius: 8px; border: 1px solid var(--sea); color: var(--sea); text-decoration: none; font-weight: 600; }
-.teiden.stale .golink { display: block; }
+.teiden .golink { display: block; text-align: center; padding: 12px; border-radius: 8px; border: 1px solid var(--sea); color: var(--sea); text-decoration: none; font-weight: 600; }
 .trend { display: grid; gap: 4px; }
 .trend .th { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .trend .th b { font-size: 13px; font-weight: 600; }
@@ -258,11 +249,9 @@ footer { color: var(--muted); font-size: 12px; }
         <div class="note">地図の丸は震源で、数字は全国の最大震度。枠の白い丸がいちばん新しい地震。一覧を押すと地図がその震源へ移ります。静岡県で揺れたものは県内の最大震度も表示。距離は浜松駅から震源まで。</div>
       </div>
       <div class="box teiden" id="teiden">
-        <h3>停電（中部電力パワーグリッド）<span id="td-time">読み込み中…</span></h3>
-        <div class="big" id="td-total">--</div>
-        <ul id="td-list"></ul>
-        <a class="golink" href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener">中部電力の停電情報で最新を見る</a>
-        <div class="note">区名は中部電力の表示（2024年の再編前の区）で、同じ数の区は営業所の管内の合計とみられるため1行にまとめています。<a href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener" style="color:var(--sea)">停電情報の地図を開く</a></div>
+        <h3>停電（中部電力パワーグリッド）</h3>
+        <a class="golink" href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener">停電情報を開く</a>
+        <div class="note">市区町村ごとの停電戸数と、復旧の見込みが見られます。停電中はスマホの電池を節約し、ラジオも使ってください。</div>
       </div>
     </div>
   </section>
@@ -972,39 +961,7 @@ async function loadQuakeDetail(listData) {
   box.hidden = false;
 }
 
-// ---- 停電（GitHub Actions が 15分ごとに data/teiden.json を更新）----
-async function loadTeiden() {
-  let d = null;
-  try { const res = await fetch(`data/teiden.json?t=${Date.now()}`, { cache: "no-store" }); if (res.ok) d = await res.json(); } catch {}
-  const box = $("teiden");
-  if (!d) { $("td-time").textContent = "取得できません"; return; }
-  const age = Date.now() - new Date(d.fetchedAt).getTime();
-  const stale = age > 60 * 60000;
-  box.classList.toggle("stale", stale);
-  $("td-time").textContent = stale ? `自動更新が止まっています（最後 ${hm(new Date(d.fetchedAt))}）` : `${hm(new Date(d.fetchedAt))} に更新`;
-  const has = d.areas.length > 0;
-  box.classList.toggle("on", has);
-  $("td-total").replaceChildren(d.shizuoka && has ? d.shizuoka : "停電なし", el("small", null, "静岡県（中部電力管内）"));
-  // 同じ営業所（コードの後半）で同じ戸数の区は1行にまとめる
-  const groups = new Map();
-  d.areas.forEach((a) => {
-    const city = a.name.startsWith("浜松市") ? "浜松市" : a.name;
-    const key = `${city}|${a.code.split("_")[1]}|${a.kosu}`;
-    const g = groups.get(key) || groups.set(key, { city, wards: [], kosu: a.kosu }).get(key);
-    g.wards.push(a.name.replace(/^浜松市/, ""));
-  });
-  const list = $("td-list");
-  list.replaceChildren();
-  [...groups.values()].sort((a, b) => (b.city === "浜松市") - (a.city === "浜松市")).forEach((g) => {
-    const li = el("li", g.city === "浜松市" ? "home" : "");
-    const label = g.city === "浜松市" ? `浜松市（${g.wards.join("・")}のあたり）` : g.city;
-    li.append(el("span", null, label), el("span", null, g.kosu));
-    list.append(li);
-  });
-  if (!has) list.append(el("li", null, "静岡県内で停電は出ていません"));
-}
-
-function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); loadTsunami(); loadTeiden(); }
+function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); loadTsunami(); }
 let lastJMA = 0;
 
 document.getElementById("reload").addEventListener("click", () => { refresh(); loadJMA(); lastJMA = Date.now(); });
