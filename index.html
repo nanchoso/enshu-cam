@@ -177,6 +177,9 @@ footer { color: var(--muted); font-size: 12px; }
 .teiden ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .teiden li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
 .teiden li.home { color: var(--warn); font-weight: 600; }
+.teiden.stale .big, .teiden.stale ul { opacity: .4; }
+.teiden .golink { display: none; text-align: center; padding: 10px; border-radius: 8px; border: 1px solid var(--sea); color: var(--sea); text-decoration: none; font-weight: 600; }
+.teiden.stale .golink { display: block; }
 .trend { display: grid; gap: 4px; }
 .trend .th { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .trend .th b { font-size: 13px; font-weight: 600; }
@@ -258,7 +261,8 @@ footer { color: var(--muted); font-size: 12px; }
         <h3>停電（中部電力パワーグリッド）<span id="td-time">読み込み中…</span></h3>
         <div class="big" id="td-total">--</div>
         <ul id="td-list"></ul>
-        <div class="note">15分ごとに更新。区名は中部電力の表示（2024年の再編前の区）で、同じ数の区は営業所の管内の合計とみられるため1行にまとめています。<a href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener" style="color:var(--sea)">停電情報の地図を開く</a></div>
+        <a class="golink" href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener">中部電力の停電情報で最新を見る</a>
+        <div class="note">区名は中部電力の表示（2024年の再編前の区）で、同じ数の区は営業所の管内の合計とみられるため1行にまとめています。<a href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener" style="color:var(--sea)">停電情報の地図を開く</a></div>
       </div>
     </div>
   </section>
@@ -974,7 +978,10 @@ async function loadTeiden() {
   try { const res = await fetch(`data/teiden.json?t=${Date.now()}`, { cache: "no-store" }); if (res.ok) d = await res.json(); } catch {}
   const box = $("teiden");
   if (!d) { $("td-time").textContent = "取得できません"; return; }
-  $("td-time").textContent = `${hm(new Date(d.fetchedAt))} に更新（変化があれば15分以内）`;
+  const age = Date.now() - new Date(d.fetchedAt).getTime();
+  const stale = age > 60 * 60000;
+  box.classList.toggle("stale", stale);
+  $("td-time").textContent = stale ? `自動更新が止まっています（最後 ${hm(new Date(d.fetchedAt))}）` : `${hm(new Date(d.fetchedAt))} に更新`;
   const has = d.areas.length > 0;
   box.classList.toggle("on", has);
   $("td-total").replaceChildren(d.shizuoka && has ? d.shizuoka : "停電なし", el("small", null, "静岡県（中部電力管内）"));
