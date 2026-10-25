@@ -1,0 +1,32 @@
+name: teiden
+
+# 中部電力パワーグリッドの停電戸数（静岡県）を取り、data/teiden.json を更新する
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: teiden
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch outage counts
+        run: python3 scripts/teiden.py data/teiden.json
+      - name: Commit when the counts changed
+        run: |
+          if git diff --quiet -I '"fetchedAt"' -- data/teiden.json; then
+            echo "no change"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/teiden.json
+          git commit -m "chore: update outage counts"
+          git push

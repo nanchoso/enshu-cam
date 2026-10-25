@@ -150,6 +150,33 @@ footer { color: var(--muted); font-size: 12px; }
 .eqm.far { background: #8ea3ad; }
 .homem { width: 10px; height: 10px; border-radius: 50%; background: var(--sea); box-shadow: 0 0 0 3px rgb(79 179 200 / .35); }
 .box.wide { grid-column: 1 / -1; }
+.tsunami { display: flex; gap: 12px; align-items: center; border-radius: 10px; padding: 10px 14px; border: 1px solid var(--line); background: var(--panel); }
+.tsunami .lamp { width: 14px; height: 14px; border-radius: 50%; flex: none; background: var(--good); box-shadow: 0 0 0 4px rgb(111 207 151 / .2); }
+.tsunami b { font-size: 15px; }
+.tsunami span { display: block; font-size: 12px; color: var(--muted); }
+.tsunami a { color: var(--sea); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.tsunami.minor { border-color: var(--warn); background: var(--warn-bg); }
+.tsunami.minor .lamp { background: var(--warn); box-shadow: 0 0 0 4px rgb(245 192 74 / .25); }
+.tsunami.minor b { color: var(--warn); }
+.tsunami.on { border: 2px solid var(--alert); background: var(--alert-bg); padding: 16px; }
+.tsunami.on .lamp { width: 20px; height: 20px; background: var(--alert); box-shadow: 0 0 0 6px rgb(255 107 74 / .3); }
+.tsunami.on b { color: var(--alert); font-size: 20px; }
+.tsunami.on span { color: var(--fg); font-size: 14px; }
+@media (prefers-reduced-motion: no-preference) { .tsunami.on .lamp { animation: blink 1s steps(2, start) infinite; } @keyframes blink { to { visibility: hidden; } } }
+.eqlatest { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; background: var(--bg); }
+.eqlatest .tc { font-weight: 600; font-size: 14px; }
+.eqlatest .tc.safe { color: var(--good); }
+.eqlatest .tc.danger { color: var(--alert); }
+.eqlatest .rows { display: flex; flex-wrap: wrap; gap: 6px; }
+.eqlatest .si2 { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px 2px 3px; }
+.eqlatest .si2 i { font: 700 12px/1 var(--font-body); font-style: normal; color: #111; border-radius: 999px; padding: 4px 7px; }
+.teiden { display: grid; gap: 6px; }
+.teiden .big { font: 600 28px/1.1 var(--font-data); font-variant-numeric: tabular-nums; }
+.teiden .big small { font: 12px var(--font-body); color: var(--muted); margin-left: 6px; }
+.teiden.on .big { color: var(--warn); }
+.teiden ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.teiden li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.teiden li.home { color: var(--warn); font-weight: 600; }
 .trend { display: grid; gap: 4px; }
 .trend .th { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .trend .th b { font-size: 13px; font-weight: 600; }
@@ -190,6 +217,8 @@ footer { color: var(--muted); font-size: 12px; }
     <p>映像に波が映るときには、もう逃げる時間がありません。このページは避難を終えてから、または注意報のときの状況確認に使います。</p>
   </div>
 
+  <div class="tsunami" id="tsunami" role="status" aria-live="assertive"><div class="lamp"></div><div><b>津波の情報を確認しています…</b></div></div>
+
   <nav class="jump"><a href="checklist.html">今やること →</a>　<a href="report.html">家族の現場メモ →</a>　<a href="#info">災害時の公式情報へ ↓</a></nav>
 
   <section>
@@ -219,10 +248,17 @@ footer { color: var(--muted); font-size: 12px; }
       </div>
       <div class="box">
         <h3>最近の地震<span id="eq-time">読み込み中…</span></h3>
+        <div class="eqlatest" id="eq-latest" hidden></div>
         <div id="eq-map" role="region" aria-label="最近の地震の震源と最大震度の地図"></div>
         <div class="legend" id="eq-legend"></div>
         <ul class="quakes" id="eq-list"></ul>
         <div class="note">地図の丸は震源で、数字は全国の最大震度。枠の白い丸がいちばん新しい地震。一覧を押すと地図がその震源へ移ります。静岡県で揺れたものは県内の最大震度も表示。距離は浜松駅から震源まで。</div>
+      </div>
+      <div class="box teiden" id="teiden">
+        <h3>停電（中部電力パワーグリッド）<span id="td-time">読み込み中…</span></h3>
+        <div class="big" id="td-total">--</div>
+        <ul id="td-list"></ul>
+        <div class="note">15分ごとに更新。区名は中部電力の表示（2024年の再編前の区）で、同じ数の区は営業所の管内の合計とみられるため1行にまとめています。<a href="https://teiden.powergrid.chuden.co.jp/" target="_blank" rel="noopener" style="color:var(--sea)">停電情報の地図を開く</a></div>
       </div>
     </div>
   </section>
@@ -656,6 +692,7 @@ async function loadQuakes() {
     q.label = s; q.latest = idx === 0;
   });
   drawQuakes(shown);
+  loadQuakeDetail(got.data);
   const latest = got.data[0];
   $("eq-time").textContent = (got.stale ? `保存分 ${hm(got.stale)} 取得・` : "") + (latest ? `${hm(new Date(latest.rdt))} まで` : "");
 }
@@ -870,7 +907,97 @@ function drawTrend() {
 let trResize = 0;
 window.addEventListener("resize", () => { clearTimeout(trResize); trResize = setTimeout(drawTrend, 150); });
 
-function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); }
+// ---- 津波 ----
+async function loadTsunami() {
+  const got = await getJSON("tsunami/data/list.json");
+  const bar = $("tsunami");
+  const body = bar.querySelector("div:last-child");
+  bar.classList.remove("on", "minor");
+  if (!got) { body.replaceChildren(el("b", null, "津波の情報を取得できません"), el("span", null, "電波を確認し、テレビ・ラジオ・緊急速報メールも確かめてください")); return; }
+  // 一覧は新しい順。発表のたびにその時点の対象地域がすべて載るので、最新の発表だけを見る
+  const e = got.data[0];
+  const age = e ? Date.now() - new Date(e.rdt).getTime() : Infinity;
+  const k = e?.kind?.find((x) => x.code === "380"); // 静岡県
+  const name = k?.kind || "";
+  const active = e && age < 72 * 3600000 && e.ift !== "取消" && /警報|注意報/.test(name) && !/解除/.test(name);
+  const minor = !active && e && age < 24 * 3600000 && k && !/解除/.test(name);
+  const link = el("a", null, "気象庁の津波情報");
+  link.href = "https://www.jma.go.jp/bosai/map.html#contents=tsunami"; link.target = "_blank"; link.rel = "noopener";
+  if (active) {
+    bar.classList.add("on");
+    body.replaceChildren(el("b", null, `静岡県に${name}`), el("span", null, `${e.anm || ""} ${hm(new Date(e.rdt))} 発表。海岸や川の河口から離れ、高い所へ。映像を見るのは避難のあと。`));
+  } else if (minor) {
+    bar.classList.add("minor");
+    body.replaceChildren(el("b", null, `静岡県: ${name}`), el("span", null, `${e.anm || ""}の地震 ${hm(new Date(e.rdt))} 発表。被害の心配はないが、海の中や海岸では注意。`));
+  } else {
+    body.replaceChildren(el("b", null, "静岡県に津波警報・注意報は出ていません"), el("span", null, e ? `最後の津波情報: ${hm(new Date(e.rdt))}（${e.anm || ""}）` : ""));
+  }
+  bar.querySelector("a")?.remove();
+  bar.append(link);
+}
+
+// ---- 最新の地震の詳細（浜松市の震度、津波のコメント）----
+const SHINDO_KEY = (v) => ({ "5-": "5弱", "5+": "5強", "6-": "6弱", "6+": "6強" })[v] || v;
+async function loadQuakeDetail(listData) {
+  const box = $("eq-latest");
+  const e = listData.find((x) => x.json && x.ttl === "震源・震度情報") || listData.find((x) => x.json && x.ttl === "震度速報");
+  if (!e) { box.hidden = true; return; }
+  const got = await getJSON(`quake/data/${e.json}`);
+  if (!got) { box.hidden = true; return; }
+  const b = got.data.Body || {};
+  box.replaceChildren();
+  box.append(el("div", "meta2", `最新の地震 ${hm(new Date(e.at))} ${e.anm || ""}${e.mag ? " M" + e.mag : ""}`));
+  const tc = b.Comments?.ForecastComment?.Text;
+  if (tc) box.append(el("div", `tc ${/心配はありません/.test(tc) ? "safe" : "danger"}`, tc));
+  const pref = (b.Intensity?.Observation?.Pref || []).find((x) => x.Code === "22");
+  const cities = [];
+  (pref?.Area || []).forEach((a) => (a.City || []).forEach((c) => { if (c.Name.startsWith("浜松市")) cities.push(c); }));
+  const rows = el("div", "rows");
+  if (cities.length) {
+    cities.forEach((c) => {
+      const t = el("span", "si2");
+      const i = el("i", null, `震度${SHINDO_KEY(c.MaxInt)}`);
+      i.style.background = SHINDO_COLOR[c.MaxInt] || "#a9c6d6";
+      t.append(i, `${c.Name}（${(c.IntensityStation || []).length}地点）`);
+      rows.append(t);
+    });
+    box.append(el("div", "meta2", "浜松市で観測した震度"), rows);
+  } else {
+    box.append(el("div", "meta2", pref ? `静岡県の最大震度 ${SHINDO_KEY(pref.MaxInt)}。浜松市では震度1以上の観測なし` : "静岡県では震度1以上の観測なし"));
+  }
+  box.hidden = false;
+}
+
+// ---- 停電（GitHub Actions が 15分ごとに data/teiden.json を更新）----
+async function loadTeiden() {
+  let d = null;
+  try { const res = await fetch(`data/teiden.json?t=${Date.now()}`, { cache: "no-store" }); if (res.ok) d = await res.json(); } catch {}
+  const box = $("teiden");
+  if (!d) { $("td-time").textContent = "取得できません"; return; }
+  $("td-time").textContent = `${hm(new Date(d.fetchedAt))} 取得`;
+  const has = d.areas.length > 0;
+  box.classList.toggle("on", has);
+  $("td-total").replaceChildren(d.shizuoka && has ? d.shizuoka : "停電なし", el("small", null, "静岡県（中部電力管内）"));
+  // 同じ営業所（コードの後半）で同じ戸数の区は1行にまとめる
+  const groups = new Map();
+  d.areas.forEach((a) => {
+    const city = a.name.startsWith("浜松市") ? "浜松市" : a.name;
+    const key = `${city}|${a.code.split("_")[1]}|${a.kosu}`;
+    const g = groups.get(key) || groups.set(key, { city, wards: [], kosu: a.kosu }).get(key);
+    g.wards.push(a.name.replace(/^浜松市/, ""));
+  });
+  const list = $("td-list");
+  list.replaceChildren();
+  [...groups.values()].sort((a, b) => (b.city === "浜松市") - (a.city === "浜松市")).forEach((g) => {
+    const li = el("li", g.city === "浜松市" ? "home" : "");
+    const label = g.city === "浜松市" ? `浜松市（${g.wards.join("・")}のあたり）` : g.city;
+    li.append(el("span", null, label), el("span", null, g.kosu));
+    list.append(li);
+  });
+  if (!has) list.append(el("li", null, "静岡県内で停電は出ていません"));
+}
+
+function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); loadTsunami(); loadTeiden(); }
 let lastJMA = 0;
 
 document.getElementById("reload").addEventListener("click", () => { refresh(); loadJMA(); lastJMA = Date.now(); });
@@ -881,7 +1008,7 @@ document.addEventListener("visibilitychange", () => {
 });
 refresh();
 loadJMA(); lastJMA = Date.now();
-setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+setInterval(() => { if (!document.hidden) { refresh(); loadTsunami(); } }, 60000);
 setInterval(() => { if (!document.hidden) { loadJMA(); lastJMA = Date.now(); } }, 5 * 60000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
