@@ -199,6 +199,23 @@ footer { color: var(--muted); font-size: 12px; }
 @media (min-width: 960px) { #rd-map { height: 460px !important; } }
 #rd-map { height: 320px; border-radius: 8px; border: 1px solid var(--line); background: #0a0f12; }
 #rd-map .base-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+#el-map { height: 360px; border-radius: 8px; border: 1px solid var(--line); background: #0a0f12; }
+@media (min-width: 960px) { #el-map { height: 480px; } }
+#el-map .base-dark { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); }
+.el-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.el-tools button { background: var(--bg); border: 1px solid var(--sea); color: var(--sea); border-radius: 8px; padding: 6px 12px; font-size: 13px; }
+.el-result { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.el-head { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; }
+.el-head b { font: 600 30px/1 var(--font-data); }
+.el-head small { font-size: 12px; color: var(--muted); }
+.el-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag.ok { border-color: var(--good); color: var(--good); }
+.el-go { font-size: 14px; padding-left: 10px; border-left: 3px solid var(--good); }
+.el-go.far { border-left-color: var(--alert); }
+.el-list { margin: 0; padding-left: 18px; font-size: 13px; }
+.el-list span { font: 12px var(--font-data); color: var(--muted); margin-left: 6px; }
+.el-dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; border: 2px solid #0d1418; }
+.el-dot.tsu { background: var(--sea); }
 .player { display: flex; align-items: center; gap: 10px; }
 .player button { width: 40px; flex: none; padding: 4px 0; }
 .player input { flex: 1; min-width: 0; accent-color: var(--sea); }
@@ -281,6 +298,22 @@ footer { color: var(--muted); font-size: 12px; }
         </div>
         <div class="legend" id="rd-legend"></div>
         <div class="note" id="rd-note">雨雲は1時間前から1時間先まで（5分ごと）。右へ動かすほど先の予報です。</div>
+      </div>
+      <div class="box wide" id="elev">
+        <h3>海抜と浸水の想定<span>国土地理院の標高・重ねるハザードマップ</span></h3>
+        <div class="seg" role="group" aria-label="重ねる浸水の想定">
+          <button type="button" data-hz="none" aria-pressed="true">海抜だけ</button>
+          <button type="button" data-hz="flood" aria-pressed="false">洪水</button>
+          <button type="button" data-hz="tsunami" aria-pressed="false">津波</button>
+        </div>
+        <div id="el-map" role="region" aria-label="浜松周辺の海抜と浸水の想定の地図"></div>
+        <div class="legend" id="el-legend"></div>
+        <div class="el-tools">
+          <button type="button" id="el-here">現在地で調べる</button>
+          <span class="note">地図を押した場所でも調べられます</span>
+        </div>
+        <div class="el-result" id="el-result" aria-live="polite" hidden></div>
+        <div class="note">色は地面の高さ（海抜）。赤いほど低い土地です。洪水の想定区域の中で調べると、洪水と津波のどちらの想定にも入っておらず今より高い一番近い場所を探して線で結びます（半径1.5km まで、直線距離）。津波の想定区域の中では線を引かず、津波避難場所を出します。想定は最大規模のもので、実際の浸水とは違うことがあります。位置そのものはどこにも送りません（地図の画像は国土地理院から読み込みます）。</div>
       </div>
     </div>
   </section>
@@ -1099,6 +1132,236 @@ async function loadRadar() {
   rdShow();
 }
 
+// ---- 海抜と浸水の想定（国土地理院の標高タイルとハザードマップのタイル。どちらも CORS で画素を読める） ----
+const GSI = "https://cyberjapandata.gsi.go.jp/xyz";
+const HAZ = "https://disaportaldata.gsi.go.jp/raster";
+const HZ_LAYER = { flood: "01_flood_l2_shinsuishin_data", tsunami: "04_tsunami_newlegend_data" };
+const ELEV_STOPS = [[-Infinity, "#5b3fa0", "〜0"], [0, "#b4002d", "0〜2"], [2, "#e8432f", "2〜5"], [5, "#f39c34", "5〜10"], [10, "#f1d54a", "10〜20"], [20, "#8fd16a", "20〜30"], [30, "#3fae8a", "30〜50"], [50, "#2f7f9a", "50m〜"]];
+const ELEV_RGB = ELEV_STOPS.map(([, c]) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16)));
+const DEPTH = [[[255, 255, 179], "0.3m未満"], [[247, 245, 169], "0.3〜0.5m"], [[248, 225, 166], "0.5〜1m"], [[255, 216, 192], "1〜3m"], [[255, 183, 183], "3〜5m"], [[255, 145, 145], "5〜10m"], [[242, 133, 201], "10〜20m"], [[220, 122, 220], "20m以上"]];
+const HZ_NAME = { flood: "洪水（想定最大）", tsunami: "津波" };
+let elMap = null, elHz = "none", elHzLayer = null, elPick = null, elPlaces = null, elTsuLayer = null, elSeq = 0;
+
+// タイルの画素（RGBA）。404 は「その範囲にデータがない」= 空として扱い、通信の失敗は undefined を返す
+const elTiles = new Map();
+function tilePixels(url) {
+  if (!elTiles.has(url)) {
+    if (elTiles.size > 400) elTiles.delete(elTiles.keys().next().value);
+    elTiles.set(url, fetch(url).then(async (res) => {
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(res.status);
+      const bmp = await createImageBitmap(await res.blob());
+      const c = document.createElement("canvas"); c.width = c.height = 256;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(bmp, 0, 0);
+      return ctx.getImageData(0, 0, 256, 256).data;
+    }).catch(() => { elTiles.delete(url); return undefined; }));
+  }
+  return elTiles.get(url);
+}
+function tilePos(lat, lng, z) {
+  const n = 2 ** z, s = Math.sin(lat * Math.PI / 180);
+  const x = (lng + 180) / 360 * n, y = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
+  return { tx: Math.floor(x), ty: Math.floor(y), i: (Math.min(255, Math.floor((y % 1) * 256)) * 256 + Math.min(255, Math.floor((x % 1) * 256))) * 4 };
+}
+// 標高 PNG: x = R·2^16 + G·2^8 + B。2^23 は「データなし」（海・川など）
+function demAt(d, i) {
+  if (!d || d[i + 3] === 0) return null;
+  const v = d[i] * 65536 + d[i + 1] * 256 + d[i + 2];
+  if (v === 8388608) return null;
+  return (v < 8388608 ? v : v - 16777216) * 0.01;
+}
+async function elevAt(lat, lng) {
+  const p = tilePos(lat, lng, 15);
+  const fine = demAt(await tilePixels(`${GSI}/dem5a_png/15/${p.tx}/${p.ty}.png`), p.i);
+  if (fine != null) return fine;
+  const q = tilePos(lat, lng, 14);
+  return demAt(await tilePixels(`${GSI}/dem_png/14/${q.tx}/${q.ty}.png`), q.i);
+}
+// 浸水の深さの凡例名。区域外は null、取れなかったら undefined
+async function depthAt(kind, lat, lng) {
+  const p = tilePos(lat, lng, 15);
+  const d = await tilePixels(`${HAZ}/${HZ_LAYER[kind]}/15/${p.tx}/${p.ty}.png`);
+  if (d === undefined) return undefined;
+  if (!d || d[p.i + 3] < 128) return null;
+  const px = [d[p.i], d[p.i + 1], d[p.i + 2]];
+  let best = null, bd = Infinity;
+  for (const [c, name] of DEPTH) { const dd = Math.hypot(c[0] - px[0], c[1] - px[1], c[2] - px[2]); if (dd < bd) { bd = dd; best = name; } }
+  return bd < 40 ? best : "浸水の想定あり";
+}
+
+const ElevLayer = window.L && L.GridLayer.extend({
+  createTile(coords, done) {
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const url = coords.z >= 15 ? `${GSI}/dem5a_png/15/${coords.x}/${coords.y}.png` : `${GSI}/dem_png/${coords.z}/${coords.x}/${coords.y}.png`;
+    const paint = (d) => {
+      if (!d) return false;
+      const ctx = c.getContext("2d"), out = ctx.createImageData(256, 256);
+      for (let i = 0; i < d.length; i += 4) {
+        const h = demAt(d, i);
+        if (h == null) continue;
+        let k = 0; while (k + 1 < ELEV_STOPS.length && h >= ELEV_STOPS[k + 1][0]) k++;
+        const [r, g, b] = ELEV_RGB[k];
+        out.data[i] = r; out.data[i + 1] = g; out.data[i + 2] = b; out.data[i + 3] = 255;
+      }
+      ctx.putImageData(out, 0, 0);
+      return true;
+    };
+    tilePixels(url).then(async (d) => {
+      // 5m メッシュがない場所は 10m メッシュ（z14）の該当部分を拡大して塗る
+      if (!paint(d) && coords.z >= 15) {
+        const p = await tilePixels(`${GSI}/dem_png/14/${coords.x >> 1}/${coords.y >> 1}.png`);
+        if (p) {
+          const half = new Uint8ClampedArray(256 * 256 * 4), ox = (coords.x & 1) * 128, oy = (coords.y & 1) * 128;
+          for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+            const s = ((oy + (y >> 1)) * 256 + ox + (x >> 1)) * 4, t = (y * 256 + x) * 4;
+            half[t] = p[s]; half[t + 1] = p[s + 1]; half[t + 2] = p[s + 2]; half[t + 3] = p[s + 3];
+          }
+          paint(half);
+        }
+      }
+      done(null, c);
+    });
+    return c;
+  },
+});
+
+function elLegend() {
+  const lg = $("el-legend");
+  lg.replaceChildren();
+  const items = elHz === "none" ? ELEV_STOPS.map(([, c, t]) => [c, t]) : DEPTH.map(([c, t]) => [`rgb(${c})`, t]);
+  items.forEach(([c, t]) => { const sp = el("span"); const i = el("i", "sq"); i.style.background = c; sp.append(i, t); lg.append(sp); });
+  if (elHz === "none") lg.append(el("span", "", "（海抜 m）"));
+  else lg.append(el("span", "", `（${HZ_NAME[elHz]}の深さ）`));
+}
+function elSetHz(kind) {
+  elHz = kind;
+  document.querySelectorAll("#elev .seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.hz === kind)));
+  if (elHzLayer) { elMap.removeLayer(elHzLayer); elHzLayer = null; }
+  if (kind !== "none") elHzLayer = L.tileLayer(`${HAZ}/${HZ_LAYER[kind]}/{z}/{x}/{y}.png`, { maxNativeZoom: 17, maxZoom: 17, opacity: 0.85, attribution: "ハザードマップ: 国土地理院" }).addTo(elMap);
+  if (elTsuLayer) (kind === "tsunami" ? elTsuLayer.addTo(elMap) : elMap.removeLayer(elTsuLayer));
+  elLegend();
+}
+
+const DIR8 = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"];
+const fmtM = (h) => h == null ? "—" : `${h.toFixed(1)}m`;
+// 浸水の想定（洪水・津波）のどちらにも入らず、minH 以上の高さがある場所のうち一番近い点を探す（25m 間隔、半径1.5km）
+async function findHigh(lat, lng, minH) {
+  const R = 1500, STEP = 25, ky = 110574, kx = 111320 * Math.cos(lat * Math.PI / 180);
+  const ok = async (la, lo) => {
+    const [h, f, t] = await Promise.all([elevAt(la, lo), depthAt("flood", la, lo), depthAt("tsunami", la, lo)]);
+    return h != null && h >= minH && f === null && t === null ? h : null;
+  };
+  const cand = [];
+  for (let dy = -R; dy <= R; dy += STEP) for (let dx = -R; dx <= R; dx += STEP) {
+    const m = Math.hypot(dx, dy);
+    if (m <= R && m > 0) cand.push([m, lat + dy / ky, lng + dx / kx, dx, dy]);
+  }
+  cand.sort((a, b) => a[0] - b[0]);
+  // 近い順に、まとめて読みながら調べる。周り50m（8方向）も区域外の点だけを採る（境目ぎりぎりや、川の土手などの細い隙間を避ける）
+  for (let s = 0; s < cand.length; s += 400) {
+    const chunk = cand.slice(s, s + 400);
+    const hs = await Promise.all(chunk.map(([, la, lo]) => ok(la, lo)));
+    for (let k = 0; k < chunk.length; k++) {
+      if (hs[k] == null) continue;
+      const [m, la, lo, dx, dy] = chunk[k];
+      const around = await Promise.all([[2, 0], [-2, 0], [0, 2], [0, -2], [1.4, 1.4], [1.4, -1.4], [-1.4, 1.4], [-1.4, -1.4]].map(([a, b]) => ok(la + b * STEP / ky, lo + a * STEP / kx)));
+      if (around.every((x) => x != null)) {
+        const deg = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+        return { lat: la, lng: lo, m, h: hs[k], dir: DIR8[Math.round(deg / 45) % 8] };
+      }
+    }
+  }
+  return null;
+}
+
+async function elAnalyze(lat, lng, label) {
+  const seq = ++elSeq;
+  const box = $("el-result");
+  box.hidden = false;
+  box.replaceChildren(el("div", "note", "調べています…"));
+  if (elPick) elPick.clearLayers(); else elPick = L.layerGroup().addTo(elMap);
+  elPick.addLayer(L.circleMarker([lat, lng], { radius: 7, color: "#fff", weight: 2, fillColor: "#4fb3c8", fillOpacity: 1 }));
+  const [h, f, t] = await Promise.all([elevAt(lat, lng), depthAt("flood", lat, lng), depthAt("tsunami", lat, lng)]);
+  if (seq !== elSeq) return;
+  const head = el("div", "el-head");
+  head.append(el("small", "", label), el("b", "", h == null ? "標高不明" : `海抜 ${fmtM(h)}`));
+  const tags = el("div", "el-tags");
+  const tag = (kind, v) => {
+    if (v === undefined) return el("span", "tag", `${HZ_NAME[kind]}: 取得できません`);
+    if (v === null) return el("span", "tag ok", `${HZ_NAME[kind]}: 想定区域外`);
+    return el("span", `tag ${/^(0\.|浸水)/.test(v) ? "mid" : "hot"}`, `${HZ_NAME[kind]}: ${v}`);
+  };
+  tags.append(tag("flood", f), tag("tsunami", t));
+  box.replaceChildren(head, tags);
+
+  const go = el("div", "el-go", "浸水の想定がない場所を探しています…");
+  box.append(go);
+  if (h == null) go.textContent = "標高データがない場所です（海・川・湖など）。陸の上を押してください。";
+  else if (f === null && t === null) go.textContent = "この地点は、洪水（想定最大）と津波のどちらの浸水想定にも入っていません。";
+  else if (t) {
+    // 津波は「区域外の一番近い所」が海側になることがあるので線は引かない
+    go.classList.add("far");
+    go.textContent = "津波の浸水想定の中です。強い揺れや津波警報のときは、すぐに海から離れた高い所か、下の津波避難場所（ビルの上の階）へ。";
+  } else {
+    const hi = await findHigh(lat, lng, h + 1);
+    if (seq !== elSeq) return;
+    if (hi) {
+      go.textContent = `浸水の想定がなく今より高い一番近い場所: ${hi.dir}へ約${Math.round(hi.m / 10) * 10}m（海抜 ${fmtM(hi.h)}、徒歩約${Math.max(1, Math.round(hi.m * 1.3 / 80))}分）`;
+      elPick.addLayer(L.polyline([[lat, lng], [hi.lat, hi.lng]], { color: "#6fcf97", weight: 3, dashArray: "6 6" }));
+      elPick.addLayer(L.circleMarker([hi.lat, hi.lng], { radius: 7, color: "#0d1418", weight: 2, fillColor: "#6fcf97", fillOpacity: 1 }).bindTooltip(`区域外 ${fmtM(hi.h)}`, { permanent: true, direction: "top", offset: [0, -6] }));
+      elMap.fitBounds(L.latLngBounds([[lat, lng], [hi.lat, hi.lng]]).pad(0.6), { maxZoom: 16 });
+    } else {
+      go.classList.add("far");
+      go.textContent = "半径1.5km 以内に、浸水の想定がなく今より高い場所が見つかりませんでした。早めに遠くへ移るか、指定の避難場所を確かめてください。";
+    }
+  }
+
+  // 近い避難所（指定避難所。津波の想定がある地点では津波避難ビルなども）
+  if (elPlaces) {
+    const near = (list, n) => list.map((p) => ({ p, km: distKm([lat, lng], [p[0], p[1]]) })).sort((a, b) => a.km - b.km).slice(0, n);
+    const groups = [["近くの指定避難所", near(elPlaces.shelter, 3)]];
+    if (t) groups.push(["近くの津波避難場所（ビルなど）", near(elPlaces.tsunami, 2)]);
+    for (const [title, list] of groups) {
+      const hs = await Promise.all(list.map(({ p }) => elevAt(p[0], p[1])));
+      if (seq !== elSeq) return;
+      const ul = el("ul", "el-list");
+      list.forEach(({ p, km }, k) => { const li = el("li", "", p[2]); li.append(el("span", "", `${km < 1 ? `${Math.round(km * 100) * 10}m` : `${km.toFixed(1)}km`}・海抜 ${fmtM(hs[k])}`)); ul.append(li); });
+      box.append(el("div", "note", title), ul);
+    }
+  }
+}
+
+async function initElev() {
+  if (!window.L || elMap) return;
+  elMap = L.map("el-map", { scrollWheelZoom: false, minZoom: 10, maxZoom: 17 }).setView([34.712, 137.715], 13);
+  L.tileLayer(`${GSI}/pale/{z}/{x}/{y}.png`, { maxZoom: 17, maxNativeZoom: 18, className: "base-dark", attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>' }).addTo(elMap);
+  new ElevLayer({ opacity: 0.55, maxNativeZoom: 15, minZoom: 10, attribution: "標高: 国土地理院" }).addTo(elMap);
+  elMap.on("click", (e) => elAnalyze(e.latlng.lat, e.latlng.lng, "押した地点"));
+  document.querySelectorAll("#elev .seg button").forEach((b) => b.addEventListener("click", () => elSetHz(b.dataset.hz)));
+  $("el-here").addEventListener("click", () => {
+    if (!navigator.geolocation) { $("el-result").hidden = false; $("el-result").replaceChildren(el("div", "note", "この端末では現在地を使えません。地図を押して調べてください。")); return; }
+    $("el-here").textContent = "現在地を確認中…";
+    navigator.geolocation.getCurrentPosition((pos) => {
+      $("el-here").textContent = "現在地で調べる";
+      const { latitude: la, longitude: lo } = pos.coords;
+      elMap.setView([la, lo], 15);
+      elAnalyze(la, lo, "現在地");
+    }, () => {
+      $("el-here").textContent = "現在地で調べる";
+      $("el-result").hidden = false;
+      $("el-result").replaceChildren(el("div", "note", "現在地を取得できませんでした。位置情報の許可を確かめるか、地図を押して調べてください。"));
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  });
+  elLegend();
+  try {
+    elPlaces = (await (await fetch("data/places.json")).json()).layers;
+    const dot = (cls) => L.divIcon({ className: "", html: `<div class="el-dot ${cls}"></div>`, iconSize: [12, 12] });
+    L.layerGroup(elPlaces.shelter.map((p) => L.marker([p[0], p[1]], { icon: dot(""), keyboard: false }).bindPopup(`指定避難所<br><b>${p[2]}</b>`))).addTo(elMap);
+    elTsuLayer = L.layerGroup(elPlaces.tsunami.map((p) => L.marker([p[0], p[1]], { icon: dot("tsu"), keyboard: false }).bindPopup(`津波避難場所<br><b>${p[2]}</b>`)));
+  } catch { elPlaces = null; }
+}
+
 function loadJMA() { loadWeather(); loadQuakes(); loadTrend(); loadTsunami(); loadRadar(); }
 let lastJMA = 0;
 
@@ -1110,6 +1373,7 @@ document.addEventListener("visibilitychange", () => {
 });
 refresh();
 loadJMA(); lastJMA = Date.now();
+initElev();
 setInterval(() => { if (!document.hidden) { refresh(); loadTsunami(); } }, 60000);
 setInterval(() => { if (!document.hidden) { loadJMA(); lastJMA = Date.now(); } }, 5 * 60000);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
