@@ -1020,7 +1020,7 @@ async function loadQuakeDetail(listData) {
 
 // ---- 雨雲レーダー（ナウキャスト）とキキクル ----
 const TILE = `${JMA}/jmatile/data`;
-const RAIN_LEGEND = [["#a0d2ff", "1〜5"], ["#218cff", "5〜10"], ["#0041ff", "10〜20"], ["#faf500", "20〜30"], ["#ff9900", "30〜50"], ["#ff2800", "50〜80"], ["#b40068", "80〜 mm/h"]];
+const RAIN_LEGEND = [["#f2f2ff", "〜1"], ["#a0d2ff", "1〜5"], ["#218cff", "5〜10"], ["#0041ff", "10〜20"], ["#faf500", "20〜30"], ["#ff9900", "30〜50"], ["#ff2800", "50〜80"], ["#b40068", "80〜 mm/h"]];
 const RISK_LEGEND = [["#f2e700", "注意（レベル2）"], ["#ff2800", "警戒（レベル3）"], ["#aa00aa", "危険（レベル4）"], ["#0c000c", "災害切迫（レベル5）"]];
 let rdMap = null, rdLayer = null, rdFrames = [], rdIndex = 0, rdTimer = null, rdKind = "rain", rdRisk = null;
 const tstr = (v) => new Date(`${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T${v.slice(8, 10)}:${v.slice(10, 12)}:00Z`);
@@ -1039,10 +1039,13 @@ function rdUrl() {
   }
   return rdRisk ? `${TILE}/risk/${rdRisk.basetime}/${rdRisk.member}/${rdRisk.validtime}/surf/${rdKind}/{z}/{x}/{y}.png` : null;
 }
+// 気象庁の雨雲・キキクルのタイルは偶数のズーム（4, 6, 8, 10）にしか中身がなく、奇数は透明な画像が返る。偶数に切り下げて拡大表示する
+let EvenTileLayer = null;
 function rdShow() {
+  EvenTileLayer ||= L.TileLayer.extend({ _clampZoom(z) { const c = L.TileLayer.prototype._clampZoom.call(this, z); return c - (c % 2); } });
   const url = rdUrl();
   if (!url || !rdMap) return;
-  if (!rdLayer) rdLayer = L.tileLayer(url, { maxNativeZoom: 10, maxZoom: 13, opacity: 0.75, attribution: "雨雲・キキクル: 気象庁" }).addTo(rdMap);
+  if (!rdLayer) rdLayer = new EvenTileLayer(url, { maxNativeZoom: 10, maxZoom: 13, opacity: 0.75, attribution: "雨雲・キキクル: 気象庁" }).addTo(rdMap);
   else rdLayer.setUrl(url);
   const isRain = rdKind === "rain";
   $("rd-player").hidden = !isRain;
