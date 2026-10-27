@@ -313,7 +313,7 @@ footer { color: var(--muted); font-size: 12px; }
           <span class="note">地図を押した場所でも調べられます</span>
         </div>
         <div class="el-result" id="el-result" aria-live="polite" hidden></div>
-        <div class="note">色は地面の高さ（海抜）。赤いほど低い土地です。洪水の想定区域の中で調べると、洪水と津波のどちらの想定にも入っておらず今より高い一番近い場所を探して線で結びます（半径1.5km まで、直線距離）。津波の想定区域の中では線を引かず、津波避難場所を出します。想定は最大規模のもので、実際の浸水とは違うことがあります。位置そのものはどこにも送りません（地図の画像は国土地理院から読み込みます）。</div>
+        <div class="note">色は地面の高さ（海抜）。赤いほど低い土地です。洪水の想定区域の中で調べると、洪水と津波のどちらの想定にも入っておらず今より高い一番近い場所を探して線で結びます（半径1.5km まで、直線距離）。津波の想定区域の中では線を引かず、津波避難場所を出します。想定は最大規模のもので、実際の浸水とは違うことがあります。揺れの確率は防災科研 J-SHIS の地震動予測地図（2024年版・平均ケース、250m 四方ごと）で、そのために調べた地点の座標を約100m に丸めて J-SHIS に送ります。ほかには位置を送りません（地図の画像は国土地理院から読み込みます）。</div>
       </div>
     </div>
   </section>
@@ -1190,6 +1190,19 @@ async function depthAt(kind, lat, lng) {
   return bd < 40 ? best : "浸水の想定あり";
 }
 
+// J-SHIS の確率論的地震動予測地図（250m メッシュ、平均ケース）。今後30年に震度◯以上の揺れに見舞われる確率。
+// 座標は小数3桁（約100m）に丸めて送る。海などデータなしは null、取れなかったら undefined
+async function shakeAt(lat, lng) {
+  try {
+    const r = await fetch(`https://www.j-shis.bosai.go.jp/map/api/pshm/Y2024/AVR/TTL_MTTL/meshinfo.geojson?position=${lng.toFixed(3)},${lat.toFixed(3)}&epsg=4326`);
+    const j = await r.json();
+    if (j.status === "Error") return j.error?.code === "NOT_FOUND" ? null : undefined;
+    const p = j.features?.[0]?.properties;
+    if (!p) return undefined;
+    return { i60: +p.T30_I60_PS, i55: +p.T30_I55_PS, i50: +p.T30_I50_PS };
+  } catch { return undefined; }
+}
+
 const ElevLayer = window.L && L.GridLayer.extend({
   createTile(coords, done) {
     const c = document.createElement("canvas"); c.width = c.height = 256;
@@ -1282,6 +1295,7 @@ async function elAnalyze(lat, lng, label) {
   box.replaceChildren(el("div", "note", "調べています…"));
   if (elPick) elPick.clearLayers(); else elPick = L.layerGroup().addTo(elMap);
   elPick.addLayer(L.circleMarker([lat, lng], { radius: 7, color: "#fff", weight: 2, fillColor: "#4fb3c8", fillOpacity: 1 }));
+  const shake = shakeAt(lat, lng);
   const [h, f, t] = await Promise.all([elevAt(lat, lng), depthAt("flood", lat, lng), depthAt("tsunami", lat, lng)]);
   if (seq !== elSeq) return;
   const head = el("div", "el-head");
@@ -1293,6 +1307,19 @@ async function elAnalyze(lat, lng, label) {
     return el("span", `tag ${/^(0\.|浸水)/.test(v) ? "mid" : "hot"}`, `${HZ_NAME[kind]}: ${v}`);
   };
   tags.append(tag("flood", f), tag("tsunami", t));
+  // 揺れの確率は J-SHIS の区分（3%・6%・26%）で色を分ける。届いたら差し込む
+  const quake = el("span", "tag", "30年以内の揺れ: 調べています…");
+  tags.append(quake);
+  shake.then((s) => {
+    if (seq !== elSeq) return;
+    if (s === undefined) quake.textContent = "30年以内の揺れ: 取得できません";
+    else if (s === null) quake.textContent = "30年以内の揺れ: データなし";
+    else {
+      const pct = (v) => `${v >= 0.995 ? ">99" : v < 0.001 ? "<0.1" : v < 0.1 ? (v * 100).toFixed(1) : Math.round(v * 100)}%`;
+      quake.className = `tag ${s.i60 >= 0.26 ? "hot" : s.i60 >= 0.06 ? "mid" : ""}`;
+      quake.textContent = `30年以内に震度6弱以上: ${pct(s.i60)}（5強以上 ${pct(s.i55)}・5弱以上 ${pct(s.i50)}）`;
+    }
+  });
   box.replaceChildren(head, tags);
 
   const go = el("div", "el-go", "浸水の想定がない場所を探しています…");
